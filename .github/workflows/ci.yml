@@ -44,7 +44,7 @@ jobs:
           if-no-files-found: ignore
 
   frontend:
-    name: Frontend lint, tests and build
+    name: Frontend lint, tests, build and end-to-end
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,3 +60,6 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - name: Install Chromium for the end-to-end tests
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

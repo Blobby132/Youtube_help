@@ -1,6 +1,7 @@
 """Script text -> Kokoro phoneme chunks.
 
-Pipeline: normalize_text (units, ranges, times, ...) -> misaki G2P (lexicon with
+Pipeline: your pronunciation entries + normalize_text (units, decimals, ranges, times, ...)
+-> misaki G2P (lexicon with
 part-of-speech aware heteronyms, espeak-ng for unknown words) -> chunks that fit the
 model's 510-token context, split at sentence ends where possible.
 """
@@ -12,7 +13,9 @@ import re
 import threading
 from dataclasses import dataclass
 
-from app.voiceover.normalize import normalize_text
+from collections.abc import Iterable
+
+from app.voiceover.normalize import Pronunciation, normalize_for_speech
 
 log = logging.getLogger("shorts.tts")
 
@@ -63,14 +66,15 @@ class Phonemizer:
             for tk in tokens
         ]
 
-    def phonemize(self, text: str) -> str:
+    def phonemize(self, text: str, pronunciations: Iterable[Pronunciation] = ()) -> str:
         """Whole text as one phoneme string (no chunking); handy for tests and debugging."""
-        return "".join(t.phonemes + (" " if t.whitespace else "") for t in self.tokens(normalize_text(text))).strip()
+        tokens = self.tokens(normalize_for_speech(text, pronunciations))
+        return "".join(t.phonemes + (" " if t.whitespace else "") for t in tokens).strip()
 
-    def chunks(self, text: str) -> list[str]:
+    def chunks(self, text: str, pronunciations: Iterable[Pronunciation] = ()) -> list[str]:
         """Normalized, phonemized chunks of at most MAX_CHUNK phonemes each."""
         chunks: list[str] = []
-        for paragraph in split_paragraphs(normalize_text(text)):
+        for paragraph in split_paragraphs(normalize_for_speech(text, pronunciations)):
             chunks.extend(pack_tokens(self.tokens(paragraph)))
         return chunks
 

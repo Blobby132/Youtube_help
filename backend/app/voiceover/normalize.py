@@ -3,12 +3,18 @@
 misaki already reads most numbers, years, ordinals, currency, acronyms and brand names
 well ("RX 9060 XT" -> "R X ninety sixty X T", "1080p" -> "ten eighty p"). This module only
 rewrites the patterns it reads badly, mostly units glued to numbers ("16GB", "450W",
-"2.5GHz"), ranges, clock times, aspect ratios and a few words it mispronounces.
+"2.5GHz"), decimals ("5.0"), ranges, clock times, aspect ratios and a few words it
+mispronounces.
+
+All of this only changes what Kokoro is given to read. The script, the captions and the
+caption list keep the original spelling.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 from num2words import num2words
 
@@ -117,6 +123,11 @@ _TIME_RE = re.compile(
 _HASH_NUMBER_RE = re.compile(r"#(\d+)\b")
 _TIMES_RE = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)x\b")
 _WITH_RE = re.compile(r"(?<!\w)w/o(?!\w)|(?<!\w)w/(?=\s)")
+# Decimals are read in full, trailing zeros included: misaki says "5.0" as plain "five" and
+# "2.50" as "two point five". Money ("$2.50") is left to misaki, which says dollars and cents,
+# and so are dotted versions like "3.14.6".
+_DECIMAL_RE = re.compile(r"(?<![\d.,$€£¥])(\d{1,3}(?:,\d{3})+|\d+)\.(\d+)(?!\d|\.\d)")
+_DIGIT_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 _EMOJI_RE = re.compile(
     "[\U0001f000-\U0001faff\U0001fc00-\U0001ffff☀-➿⬀-⯿️‍⃣]"
 )
@@ -168,6 +179,25 @@ def _time(match: re.Match[str]) -> str:
     return f"{num2words(hour)} {_say_two_digits(minute)}{ampm}"
 
 
+def number_words(integer: str) -> str:
+    """'1,234' -> 'one thousand two hundred thirty-four' (American style, no "and")."""
+    return num2words(int(integer.replace(",", ""))).replace(",", "").replace(" and ", " ")
+
+
+def _decimal(match: re.Match[str]) -> str:
+    integer, fraction = match.groups()
+    spoken = f"{number_words(integer)} point {' '.join(_DIGIT_WORDS[int(d)] for d in fraction)}"
+    return _spaced(match, spoken)
+
+
+def _spaced(match: re.Match[str], replacement: str) -> str:
+    """Adds spaces where the replacement would otherwise glue onto a neighbouring word."""
+    text, start, end = match.string, match.start(), match.end()
+    before = " " if start > 0 and text[start - 1].isalnum() else ""
+    after = " " if end < len(text) and text[end].isalnum() else ""
+    return f"{before}{replacement}{after}"
+
+
 def _money_magnitude(match: re.Match[str]) -> str:
     currency, number, magnitude = match.groups()
     return f"{number} {MAGNITUDES[magnitude]} {CURRENCY_NAMES[currency]}"
@@ -188,5 +218,55 @@ def normalize_text(text: str) -> str:
     text = _RANGE_RE.sub(r"\1 to \2", text)
     text = _HASH_NUMBER_RE.sub(r"number \1", text)
     text = _TIMES_RE.sub(r"\1 times", text)
+    text = _DECIMAL_RE.sub(_decimal, text)
     text = _PRONUNCIATION_RE.sub(lambda m: f"[{m.group(1)}](/{PRONUNCIATIONS[m.group(1)]}/)", text)
     return re.sub(r"[ \t]{2,}", " ", text)
+
+
+@dataclass(frozen=True)
+class Pronunciation:
+    """A user entry: whenever `written` appears in the script, Kokoro says `spoken`."""
+
+    written: str
+    spoken: str
+
+
+# Private-use characters mark where an entry was applied while the default rules run, so
+# they can't rewrite your spoken text ("five point oh" must not become anything else).
+_MARK_OPEN, _MARK_CLOSE = "\uf8f0", "\uf8f1"
+_MARK_RE = re.compile(f"{_MARK_OPEN}(.){_MARK_CLOSE}")
+_MAX_ENTRIES = 0xF8F0 - 0xE000  # one private-use character per entry, below the markers
+_LETTER = r"[^\W\d_]"
+
+
+def _entry_pattern(written: str) -> str:
+    """Matches `written` as a whole term: "5.0" not inside "15.0" or "5.01", "GHz" also in "2.5GHz"."""
+    first, last = written[0], written[-1]
+    before = f"(?<!{_LETTER})" if first.isalpha() else r"(?<![\d.])(?<!\d,)" if first.isdigit() else ""
+    after = f"(?!{_LETTER})" if last.isalpha() else r"(?!\d|[.,]\d)" if last.isdigit() else ""
+    return before + re.escape(written) + after
+
+
+def usable_entries(entries: Iterable[Pronunciation]) -> list[Pronunciation]:
+    """Complete entries, the last one winning for a repeated term, longest terms first."""
+    latest: dict[str, Pronunciation] = {}
+    for entry in entries:
+        written, spoken = entry.written.strip(), entry.spoken.strip()
+        if written and spoken:
+            latest[written] = Pronunciation(written, spoken)
+    return sorted(latest.values(), key=lambda e: len(e.written), reverse=True)[:_MAX_ENTRIES]
+
+
+def normalize_for_speech(text: str, entries: Iterable[Pronunciation] = ()) -> str:
+    """What Kokoro reads: your pronunciation entries first, then the default rules."""
+    usable = usable_entries(entries)
+    if not usable:
+        return normalize_text(text)
+    pattern = re.compile("|".join(f"({_entry_pattern(e.written)})" for e in usable))
+
+    def mark(match: re.Match[str]) -> str:
+        index = (match.lastindex or 1) - 1
+        return _spaced(match, f"{_MARK_OPEN}{chr(0xE000 + index)}{_MARK_CLOSE}")
+
+    normalized = normalize_text(pattern.sub(mark, text))
+    return _MARK_RE.sub(lambda m: usable[ord(m.group(1)) - 0xE000].spoken, normalized)

@@ -5,6 +5,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { InlineAlert } from '../../components/ui/InlineAlert'
 import { ProgressBar } from '../../components/ui/ProgressBar'
 import { Section } from '../../components/ui/Section'
+import { captionsOutOfDate } from '../../state/project/selectors'
 import { updateProject, useProject } from '../../state/project/store'
 import { useUi } from '../../state/ui'
 import { CaptionList } from './CaptionList'
@@ -15,7 +16,7 @@ import { generateCaptions, useCaptionTasks } from './captionTasks'
 export function CaptionsPanel() {
   const enabled = useProject((p) => p.captions.enabled)
   const voiceoverFile = useProject((p) => p.voiceover?.file ?? null)
-  const captionFile = useProject((p) => p.captions.voiceoverFile)
+  const stale = useProject(captionsOutOfDate)
   const source = useProject((p) => p.captions.source)
   const wordCount = useProject((p) => p.captions.words.length)
   const backend = useUi((s) => s.backend)
@@ -24,10 +25,26 @@ export function CaptionsPanel() {
   const error = useCaptionTasks((s) => s.error)
   const matched = useCaptionTasks((s) => s.matched)
   const hasCaptions = wordCount > 0
-  const stale = hasCaptions && captionFile !== voiceoverFile
 
   return (
     <>
+      {/* Pinned to the top of the panel: you are often scrolled down in the caption list or
+          the style controls when the voiceover changes, and must still see this. */}
+      {stale && !task && (
+        <div className={styles.pinned}>
+          <InlineAlert tone="warning">
+            <p>The voiceover changed after these captions were made, so their timing no longer matches.</p>
+            <button
+              type="button"
+              className={styles.pinnedAction}
+              disabled={backend !== 'online'}
+              onClick={() => void generateCaptions()}
+            >
+              Regenerate captions
+            </button>
+          </InlineAlert>
+        </div>
+      )}
       <Section
         label="Captions"
         hint="Timed against the voiceover. Regenerate after you change the script."
@@ -61,9 +78,6 @@ export function CaptionsPanel() {
         )}
         {error && <InlineAlert>{error}</InlineAlert>}
         {!voiceoverFile && <InlineAlert>Generate the voiceover first: caption timing is derived from it.</InlineAlert>}
-        {voiceoverFile && stale && !task && (
-          <InlineAlert tone="info">The voiceover changed after these captions were made. Regenerate them to match it.</InlineAlert>
-        )}
         {hasCaptions && !stale && !task && (
           <p className={styles.note}>
             {source === 'script'

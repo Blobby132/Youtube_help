@@ -16,7 +16,8 @@ import numpy as np
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.core.jobs import Job
-from app.core.media import transcode_to_wav, wav_duration, write_wav
+from app.core.media import transcode_to_wav, wav_bytes, wav_duration, write_wav
+from app.pronunciations.store import PronunciationStore
 from app.voiceover.assets import ensure_kokoro_files, kokoro_dir, missing_files
 from app.voiceover.g2p import get_phonemizer
 from app.voiceover.kokoro import SAMPLE_RATE, KokoroEngine
@@ -99,7 +100,8 @@ class VoiceoverService:
         voice = require_voice(voice_id)
         if not MIN_SPEED <= speed <= MAX_SPEED:
             raise AppError(f"Speed must be between {MIN_SPEED} and {MAX_SPEED}", 400)
-        chunks = get_phonemizer(british=voice.accent == "UK").chunks(text)
+        pronunciations = PronunciationStore(self.settings.data_dir).load()
+        chunks = get_phonemizer(british=voice.accent == "UK").chunks(text, pronunciations)
         if not chunks:
             raise AppError("The script has no words to read.", 400)
         log.info("Synthesizing %d chunk(s) with %s at %.2fx", len(chunks), voice_id, speed)
@@ -166,6 +168,12 @@ class VoiceoverService:
             sample = f"Hi, I'm {voice.name}. This is how your next Short could sound."
             write_wav(path, self.synthesize(sample, voice_id), SAMPLE_RATE)
         return path
+
+    def say(self, text: str, voice_id: str) -> bytes:
+        """A short line read with the current pronunciation list, as WAV bytes (to try an entry)."""
+        if not self.model_ready():
+            raise AppError("The Kokoro model isn't downloaded yet. Run `npm run setup`.", 409)
+        return wav_bytes(self.synthesize(text, voice_id), SAMPLE_RATE)
 
     @staticmethod
     def import_audio(media_dir: Path, upload: Path, original_name: str, source: str) -> dict[str, Any]:

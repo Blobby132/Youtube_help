@@ -16,6 +16,7 @@ def settings(tmp_path: Path) -> Settings:
         projects_dir=tmp_path / "projects",
         models_dir=tmp_path / "models",
         pexels_api_key=None,
+        data_dir=tmp_path / "data",
     )
 
 

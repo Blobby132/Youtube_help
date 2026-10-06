@@ -70,6 +70,64 @@ def test_script_words_strip_pronunciation_markup_and_join_dashes() -> None:
     assert script_words("Say [Kokoro](/kˈOkəɹO/) — now… really") == ["Say", "Kokoro —", "now…", "really"]
 
 
+# --- alignment when the voiceover said something else (pronunciation list) --------------
+
+from app.voiceover.normalize import Pronunciation, normalize_for_speech  # noqa: E402
+
+SUBSTITUTED_SCRIPT = "The clock hits 5.0 GHz today."
+SUBSTITUTIONS = [Pronunciation("5.0", "five point oh"), Pronunciation("GHz", "gigahertz")]
+
+
+def spoken(word: str) -> str:
+    return normalize_for_speech(word, SUBSTITUTIONS)
+
+
+def test_substituted_terms_take_the_timing_of_what_was_said() -> None:
+    # Kokoro said "five point oh gigahertz", and Whisper wrote down exactly that.
+    transcript = heard(
+        ("The", 0.0, 0.2), ("clock", 0.2, 0.5), ("hits", 0.5, 0.8),
+        ("five", 0.8, 1.1), ("point", 1.1, 1.4), ("oh", 1.4, 1.6),
+        ("gigahertz", 1.6, 2.3), ("today.", 2.3, 2.8),
+    )
+    words, ratio = align_to_script(SUBSTITUTED_SCRIPT, transcript, spoken)
+    # Captions keep your spelling...
+    assert [w.text for w in words] == ["The", "clock", "hits", "5.0", "GHz", "today."]
+    # ...with the timing of the spoken words.
+    assert (words[3].start, words[3].end) == (pytest.approx(0.8), pytest.approx(1.6))
+    assert (words[4].start, words[4].end) == (pytest.approx(1.6), pytest.approx(2.3))
+    assert ratio == pytest.approx(1.0)
+
+
+def test_spoken_forms_raise_the_match_over_written_ones() -> None:
+    transcript = heard(
+        ("The", 0.0, 0.2), ("clock", 0.2, 0.5), ("hits", 0.5, 0.8),
+        ("five", 0.8, 1.1), ("point", 1.1, 1.4), ("oh", 1.4, 1.6),
+        ("gigahertz", 1.6, 2.3), ("today.", 2.3, 2.8),
+    )
+    _, without = align_to_script(SUBSTITUTED_SCRIPT, transcript)
+    _, with_spoken = align_to_script(SUBSTITUTED_SCRIPT, transcript, spoken)
+    assert with_spoken > without
+
+
+def test_substituted_terms_still_match_when_whisper_writes_digits() -> None:
+    transcript = heard(
+        ("The", 0.0, 0.2), ("clock", 0.2, 0.5), ("hits", 0.5, 0.8),
+        ("5.0", 0.8, 1.6), ("GHz", 1.6, 2.3), ("today.", 2.3, 2.8),
+    )
+    words, ratio = align_to_script(SUBSTITUTED_SCRIPT, transcript, spoken)
+    assert [w.text for w in words] == ["The", "clock", "hits", "5.0", "GHz", "today."]
+    assert words[3].start == pytest.approx(0.8)
+    assert ratio == pytest.approx(1.0)
+
+
+def test_default_decimal_reading_aligns_too() -> None:
+    # No entries: "5.0" is read "five point zero" by default.
+    transcript = heard(("Version", 0.0, 0.5), ("five", 0.5, 0.8), ("point", 0.8, 1.1), ("zero", 1.1, 1.5))
+    words, _ = align_to_script("Version 5.0", transcript, normalize_for_speech)
+    assert words[1].text == "5.0"
+    assert (words[1].start, words[1].end) == (pytest.approx(0.5), pytest.approx(1.5))
+
+
 # --- onset snapping --------------------------------------------------------------------
 
 
@@ -165,6 +223,25 @@ def test_captions_fall_back_to_the_transcript(client: TestClient, voiceover: str
 def test_captions_without_script_use_the_transcript(client: TestClient, voiceover: str) -> None:
     result = run_job(client, {"file": voiceover})["result"]
     assert result["source"] == "transcript" and result["matched"] is None
+
+
+def test_captions_job_matches_through_the_pronunciation_list(
+    client: TestClient, voiceover: str, transcriber: FakeTranscriber
+) -> None:
+    client.put(
+        "/api/pronunciations",
+        json={"entries": [{"written": "5.0", "spoken": "five point oh"}, {"written": "GHz", "spoken": "gigahertz"}]},
+    )
+    transcriber.words = heard(
+        ("The", 0.0, 0.2), ("clock", 0.2, 0.5), ("hits", 0.5, 0.8),
+        ("five", 0.8, 1.1), ("point", 1.1, 1.4), ("oh", 1.4, 1.6),
+        ("gigahertz", 1.6, 2.3), ("today.", 2.3, 2.8),
+    )
+    result = run_job(client, {"file": voiceover, "script": SUBSTITUTED_SCRIPT})["result"]
+    assert result["source"] == "script"
+    assert result["matched"] == pytest.approx(1.0)
+    assert [w["text"] for w in result["words"]] == ["The", "clock", "hits", "5.0", "GHz", "today."]
+    assert result["words"][3]["start"] == pytest.approx(0.8)
 
 
 def test_captions_for_missing_file_is_404(client: TestClient) -> None:

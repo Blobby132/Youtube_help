@@ -33,6 +33,8 @@ class Settings:
     tts_device: str = "cpu"
     # faster-whisper model for captions; always runs on the CPU.
     whisper_model: str = "small.en"
+    # App-wide data that isn't part of a project, e.g. the pronunciation list.
+    data_dir: Path = REPO_ROOT / "data"
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -52,4 +54,5 @@ def get_settings() -> Settings:
         pexels_api_key=key or None,
         tts_device=device if device in TTS_DEVICES else "cpu",
         whisper_model=(os.getenv("WHISPER_MODEL") or "small.en").strip(),
+        data_dir=_path_from_env("DATA_DIR", REPO_ROOT / "data"),
     )

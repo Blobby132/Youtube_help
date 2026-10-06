@@ -108,23 +108,43 @@ because it works on every PC.
 
 ### How pronunciation works
 
-Text goes through three steps before Kokoro speaks it:
+Text goes through these steps before Kokoro speaks it. They change only what Kokoro reads: your
+script, the captions and the caption list keep your original spelling.
 
-1. **Normalization** (`backend/app/voiceover/normalize.py`): rewrites what speech engines read
-   badly, such as units glued to numbers (`16GB` → "16 gigabytes", `450W`, `2.5GHz`), ranges
-   (`5-10` → "5 to 10"), clock times, `9:16`, `#1` → "number 1", `2x`, `$1.5B` and emojis.
-2. **misaki**, Kokoro's own grapheme-to-phoneme library: a pronunciation dictionary with
+1. **Your pronunciation list** (see below) replaces the terms you've listed.
+2. **Normalization** (`backend/app/voiceover/normalize.py`): rewrites what speech engines read
+   badly, such as units glued to numbers (`16GB` → "16 gigabytes", `450W`, `2.5GHz`), decimals
+   read in full with trailing zeros (`5.0` → "five point zero", `2.50` → "two point five
+   zero"; money like `$2.50` is still "two dollars and fifty cents"), ranges (`5-10` → "5 to
+   10"), clock times, `9:16`, `#1` → "number 1", `2x`, `$1.5B` and emojis.
+3. **misaki**, Kokoro's own grapheme-to-phoneme library: a pronunciation dictionary with
    part-of-speech-aware heteronyms ("read", "live"), and number reading ("9060" → "ninety
    sixty", "1080p" → "ten eighty p"). Words it doesn't know go to **espeak-ng**.
-3. Kokoro turns the phonemes into audio, a couple of sentences at a time.
+4. Kokoro turns the phonemes into audio, a couple of sentences at a time.
 
 misaki is the G2P Kokoro was trained with, so it gives the best results, but its PyPI package
 refuses to install on Python 3.13+. Its English part is pure Python and its dependencies (spaCy,
 espeak-ng) all support Python 3.14, so a copy lives in `backend/app/voiceover/misaki`
 (Apache 2.0, changes marked "Shorts Creator:").
 
-If a word comes out wrong, the easiest fix is to spell it the way it sounds in the script. For
-exact control, misaki's override syntax works too: `[Kokoro](/kˈOkəɹO/)`.
+### Pronunciations list
+
+If a word or symbol comes out wrong, add it under **Pronunciations** in the Script & voice tab:
+what's **written** in the script, and how it should be **spoken**, e.g. `5.0` → "five point oh"
+or `GHz` → "gigahertz". ▶ reads the written text the way a voiceover would. Regenerate the AI
+read to apply changes.
+
+- The list is saved once for the whole app (`data\pronunciations.json`), not per project.
+- Entries win over the default rules, and your spoken text is used exactly as typed.
+- A term matches as a whole: `5.0` doesn't match inside `15.0` or `5.01`, while `GHz` does
+  match in `2.5GHz`. Matching is case-sensitive.
+- The longest term wins (`RTX 4090` before `RTX`); if a term is listed twice, the lower entry
+  is used.
+- Captions still match the voiceover when it says something other than the script: each word
+  is matched both as written and as spoken.
+
+For exact control over sounds, misaki's phoneme syntax works in the spoken text and in the
+script: `[Kokoro](/kˈOkəɹO/)`.
 
 `npm test` writes pronunciation samples (e.g. "The RX 9060 XT has 16GB of VRAM and renders at
 1080p.") in three voices to `backend\tests\output\`, so you can listen to them.
@@ -146,8 +166,8 @@ every word: on a 4-core cloud CPU a 46-second voiceover took about 8 seconds.
   the word being spoken gets the highlight colour.
 - **Fix typos** in the caption list; timing stays the same. Typing more or fewer words shares
   the caption's time between them. Clear a caption to remove it.
-- After you change the script and regenerate the voiceover, the panel tells you the captions
-  are out of date: regenerate them.
+- After you change the script and regenerate the voiceover, a warning pinned to the top of
+  the Captions tab says the captions are out of date, with a button to regenerate them.
 
 The model is set by `WHISPER_MODEL` in `.env` (`small.en` by default; `base.en` is faster,
 `medium.en` more accurate). It always runs on the CPU.
@@ -186,8 +206,10 @@ runs the backend test suite with pytest (`npm test -- -k projects` passes argume
 It covers the text normalization, phonemes (including the RX 9060 XT sentence), the Kokoro
 engine and its DirectML-to-CPU fallback, voiceover and music uploads, caption alignment, and,
 once the models are downloaded, real speech generation and a Kokoro → Whisper → captions
-round trip. `npm run test:frontend` runs the frontend unit tests (caption grouping, editing
-and layout). CI runs it on the newest Python (3.14) only and keeps
+round trip. `npm run test:frontend` runs the frontend unit tests (caption grouping, editing,
+layout and the out-of-date check). `npm run test:e2e` drives the real frontend in Chromium
+against a fake backend (on a new machine, first run `npx playwright install chromium` once
+inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
 the frontend.
 
@@ -201,6 +223,7 @@ backend/                FastAPI app (Python)
   app/voiceover/misaki/ vendored misaki English G2P (Apache 2.0)
   app/captions/         faster-whisper transcription, script alignment, caption job
   app/fonts/            caption/title fonts (OFL) shared by preview and render
+  app/pronunciations/   the app-wide pronunciation list (data/pronunciations.json)
   app/mix/              background music
   tests/                pytest suite
 frontend/               React + TypeScript + Vite
@@ -210,8 +233,10 @@ frontend/               React + TypeScript + Vite
   src/layout/           left and right side panels
   src/state/            project document, autosave, editor UI state
   src/styles/global.css design tokens; change --accent to re-theme the app
+  e2e/                  end-to-end tests (Playwright, fake backend)
 scripts/                setup.mjs, dev.mjs, test.mjs (plain Node, no dependencies)
 projects/               your saved projects (not committed)
+data/                   app-wide data, e.g. the pronunciation list (not committed)
 ```
 
 ## Troubleshooting

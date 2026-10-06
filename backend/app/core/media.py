@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import shutil
 import subprocess
 import wave
 from pathlib import Path
+from typing import BinaryIO
 
 import numpy as np
 
@@ -37,15 +39,22 @@ def run_tool(args: list[str], what: str) -> subprocess.CompletedProcess[str]:
     return result
 
 
-def write_wav(path: Path, samples: np.ndarray, sample_rate: int) -> None:
-    """Mono float samples (-1..1) -> 16-bit PCM WAV."""
+def write_wav(path: Path | BinaryIO, samples: np.ndarray, sample_rate: int) -> None:
+    """Mono float samples (-1..1) -> 16-bit PCM WAV, to a file path or a binary stream."""
     pcm = (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as out:
+    if isinstance(path, Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path) if isinstance(path, Path) else path, "wb") as out:
         out.setnchannels(1)
         out.setsampwidth(2)
         out.setframerate(sample_rate)
         out.writeframes(pcm.tobytes())
+
+
+def wav_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
+    buffer = io.BytesIO()
+    write_wav(buffer, samples, sample_rate)
+    return buffer.getvalue()
 
 
 def wav_duration(path: Path) -> float:

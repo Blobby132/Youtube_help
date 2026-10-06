@@ -64,6 +64,12 @@ export interface CaptionResult {
   voiceoverFile: string
 }
 
+/** One pronunciation entry: Kokoro says `spoken` wherever the script has `written`. */
+export interface PronunciationEntry {
+  written: string
+  spoken: string
+}
+
 export interface FontInfo {
   id: string
   name: string
@@ -119,6 +125,23 @@ export const api = {
   startCaptions: (projectId: string, body: { file: string; script: string | null }) =>
     request<Job<CaptionResult>>(`${projectPath(projectId)}/captions`, json('POST', body)),
   fonts: () => request<FontInfo[]>('/api/fonts'),
+  getPronunciations: () => request<{ entries: PronunciationEntry[] }>('/api/pronunciations'),
+  savePronunciations: (entries: PronunciationEntry[]) =>
+    request<{ entries: PronunciationEntry[] }>('/api/pronunciations', json('PUT', { entries })),
+  /** Reads a short line with the saved pronunciation list; resolves to WAV audio. */
+  say: async (voiceId: string, text: string): Promise<Blob> => {
+    let response: Response
+    try {
+      response = await fetch(`/api/voices/${encodeURIComponent(voiceId)}/say`, json('POST', { text }))
+    } catch {
+      throw new ApiError('Cannot reach the backend. Is it running?', 0)
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      throw new ApiError(typeof body?.detail === 'string' ? body.detail : `${response.status} ${response.statusText}`, response.status)
+    }
+    return response.blob()
+  },
 }
 
 export const fontUrl = (fontId: string) => `/api/fonts/${encodeURIComponent(fontId)}`

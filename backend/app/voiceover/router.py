@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from app.core.config import Settings, get_settings
@@ -43,6 +43,16 @@ def list_voices() -> list[dict[str, str]]:
 @router.get("/api/voices/{voice_id}/preview")
 def voice_preview(voice_id: str, service: ServiceDep) -> FileResponse:
     return FileResponse(service.voice_preview(voice_id), media_type="audio/wav")
+
+
+class SayRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=300)
+
+
+@router.post("/api/voices/{voice_id}/say")
+def say(voice_id: str, body: SayRequest, service: ServiceDep) -> Response:
+    """Reads a short line aloud, e.g. to hear how a pronunciation entry sounds."""
+    return Response(service.say(body.text, voice_id), media_type="audio/wav")
 
 
 @router.post("/api/projects/{project_id}/voiceover/ai")

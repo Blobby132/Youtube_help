@@ -4,6 +4,8 @@
 # Dependencies and builds
 node_modules/
 frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
 backend/.venv/
 __pycache__/
 *.pyc
@@ -14,6 +16,7 @@ backend/tests/output/
 projects/*
 !projects/.gitkeep
 models/
+data/
 
 # Editors / OS
 .vscode/

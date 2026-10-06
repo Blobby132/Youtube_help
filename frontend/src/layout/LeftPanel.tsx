@@ -1,5 +1,6 @@
 import { MediaPanel } from '../features/media/MediaPanel'
 import { MixSection } from '../features/mix/MixSection'
+import { PronunciationsSection } from '../features/pronunciations/PronunciationsSection'
 import { RankingPanel } from '../features/ranking/RankingPanel'
 import { ScriptSection } from '../features/script/ScriptSection'
 import { VoiceoverSection } from '../features/voiceover/VoiceoverSection'
@@ -20,6 +21,7 @@ export function LeftPanel() {
         <>
           <ScriptSection />
           <VoiceoverSection />
+          <PronunciationsSection />
           <MixSection />
         </>
       )}

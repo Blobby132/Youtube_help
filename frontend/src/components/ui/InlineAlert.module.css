@@ -19,6 +19,16 @@
   color: var(--danger);
 }
 
+.warning {
+  background: color-mix(in srgb, var(--warning) 10%, var(--panel));
+  border-color: color-mix(in srgb, var(--warning) 50%, transparent);
+  color: var(--text);
+}
+
+.warning .icon {
+  color: var(--warning);
+}
+
 .info {
   background: var(--surface);
   border-color: var(--border-strong);

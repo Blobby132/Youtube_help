@@ -1,0 +1,100 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  margin-right: -6px;
+  padding-right: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.header,
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) 14px minmax(0, 1.2fr) 26px 26px;
+  align-items: center;
+  gap: 4px;
+}
+
+.header {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+}
+
+.input::placeholder {
+  color: var(--text-faint);
+}
+
+.arrow {
+  color: var(--text-faint);
+}
+
+.iconButton {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.iconButton:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.iconButton:disabled {
+  opacity: 0.35;
+}
+
+.active,
+.active:not(:disabled):hover {
+  color: var(--accent);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.saveState {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.saveState[data-state='error'] {
+  color: var(--danger);
+}
+
+.note {
+  font-size: 11px;
+  color: var(--text-faint);
+}

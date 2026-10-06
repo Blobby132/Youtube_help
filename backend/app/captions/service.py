@@ -13,6 +13,8 @@ from app.captions.whisper import TimedWord, Transcriber
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.core.jobs import Job
+from app.pronunciations.store import PronunciationStore
+from app.voiceover.normalize import normalize_for_speech
 
 log = logging.getLogger("shorts.captions")
 
@@ -54,7 +56,10 @@ class CaptionService:
         job.update(0.95, "Matching words to your script…")
         words, source, matched = heard, "transcript", None
         if script and script.strip():
-            aligned, matched = align_to_script(script, heard)
+            # How each script word was said: the pronunciation list and the default rules
+            # (e.g. "5.0" -> "five point oh") change what Kokoro reads, not the captions.
+            entries = PronunciationStore(self.settings.data_dir).load()
+            aligned, matched = align_to_script(script, heard, lambda word: normalize_for_speech(word, entries))
             log.info("Script match: %.0f%% of letters", matched * 100)
             if aligned and matched >= MIN_SCRIPT_MATCH:
                 words, source = aligned, "script"

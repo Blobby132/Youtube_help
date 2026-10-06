@@ -17,6 +17,7 @@ from app.core.logging import setup_logging
 from app.fonts import router as fonts
 from app.mix import router as mix
 from app.projects import router as projects
+from app.pronunciations import router as pronunciations
 from app.voiceover import router as voiceover
 from app.voiceover.g2p import get_phonemizer
 from app.voiceover.service import get_voiceover_service
@@ -68,6 +69,7 @@ def create_app(*, warm: bool = True) -> FastAPI:
     app.include_router(mix.router)
     app.include_router(captions.router)
     app.include_router(fonts.router)
+    app.include_router(pronunciations.router)
     return app
 
 

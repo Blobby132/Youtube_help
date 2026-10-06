@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from datetime import UTC, datetime
@@ -18,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.errors import AppError
+from app.core.files import atomic_write_text
 
 log = logging.getLogger("shorts.projects")
 
@@ -99,7 +99,7 @@ class ProjectStore:
 
         folder = self.project_dir(project_id)
         folder.mkdir(parents=True, exist_ok=True)
-        _atomic_write(folder / PROJECT_FILE, json.dumps(data, indent=2, ensure_ascii=False))
+        atomic_write_text(folder / PROJECT_FILE, json.dumps(data, indent=2, ensure_ascii=False))
         collect_garbage(folder / MEDIA_DIR, referenced_media(data))
         return summarize(project_id, data)
 
@@ -141,17 +141,3 @@ def collect_garbage(media: Path, referenced: set[str], now: float | None = None)
                 log.info("Removed unused media file %s", path)
         except OSError as exc:
             log.warning("Could not remove %s: %s", path, exc)
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    # On Windows the replace can briefly fail while an antivirus or indexer holds the file.
-    for attempt in range(5):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            if attempt == 4:
-                raise
-            time.sleep(0.05 * (attempt + 1))
