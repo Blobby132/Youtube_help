@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Dependencies and builds
+node_modules/
+frontend/dist/
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# User data and downloaded models
+projects/*
+!projects/.gitkeep
+models/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

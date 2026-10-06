@@ -1,0 +1,19 @@
+.app {
+  display: grid;
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr) auto;
+  height: 100vh;
+  min-width: 1100px;
+  min-height: 640px;
+}
+
+.editor {
+  display: contents;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: var(--panel-width) minmax(0, 1fr) var(--panel-width);
+  gap: var(--gap);
+  min-height: 0;
+  padding: var(--gap);
+}

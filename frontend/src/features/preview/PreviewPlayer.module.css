@@ -1,0 +1,134 @@
+.center {
+  min-width: 0;
+  min-height: 0;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  container-type: size;
+}
+
+/* The frame keeps 9:16 and grows as large as the panel allows, leaving room for the controls. */
+.stage {
+  --controls-h: 64px;
+  --frame-w: min(100cqw, (100cqh - var(--controls-h)) * 9 / 16);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+
+.frame {
+  position: relative;
+  flex: none;
+  width: var(--frame-w);
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: #000;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 14%;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.controlsArea {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  width: max(var(--frame-w), min(360px, 100cqw));
+  height: var(--controls-h);
+  padding: 4px 6px 0;
+}
+
+.scrubber {
+  --track: 3px;
+  --thumb: 11px;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.time {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.volume {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.volumeRange {
+  --track: 3px;
+  --thumb: 10px;
+  width: 54px;
+  margin-right: 6px;
+}
+
+.iconButton {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.iconButton:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.iconButton:disabled,
+.play:disabled {
+  opacity: 0.45;
+}
+
+.play {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.play:not(:disabled):hover {
+  background: var(--accent-hover);
+}

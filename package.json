@@ -1,0 +1,17 @@
+{
+  "name": "shorts-creator",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local web app for making vertical YouTube Shorts from a script.",
+  "type": "module",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "test": "node scripts/test.mjs",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

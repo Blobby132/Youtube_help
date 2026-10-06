@@ -1,0 +1,78 @@
+import { newId } from '../../lib/ids'
+import { PROJECT_VERSION, type Project } from './types'
+
+export const DEFAULT_VOICE_ID = 'af_heart'
+
+export function createProject(name = 'Untitled short'): Project {
+  return {
+    id: newId('p'),
+    name,
+    version: PROJECT_VERSION,
+    script: '',
+    voiceId: DEFAULT_VOICE_ID,
+    voiceover: null,
+    mix: { voiceVolume: 1, musicVolume: 0.15, music: null },
+    media: [],
+    clips: [],
+    captions: {
+      enabled: true,
+      words: [],
+      sourceScript: null,
+      // Bold, centered, one word at a time: the classic Shorts look.
+      style: {
+        fontId: 'montserrat',
+        fontSize: 96,
+        color: '#ffffff',
+        highlightColor: '#ffd60a',
+        outlineColor: '#000000',
+        outlineWidth: 8,
+        shadow: true,
+        uppercase: false,
+        position: 'middle',
+        wordsPerCaption: 1,
+      },
+    },
+    canvas: {
+      background: { mode: 'blur', color: '#000000', blur: 40 },
+      title: {
+        enabled: false,
+        text: '',
+        fontId: 'montserrat',
+        fontSize: 72,
+        color: '#ffffff',
+        bar: true,
+        barColor: '#000000',
+        timing: 'full',
+        seconds: 3,
+      },
+    },
+    ranking: { enabled: true, direction: 'down', entries: [] },
+  }
+}
+
+type Json = Record<string, unknown>
+
+function isObject(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Fills fields missing from `value` with the ones from `defaults`, recursively. */
+function withDefaults<T>(defaults: T, value: unknown): T {
+  if (!isObject(defaults) || !isObject(value)) {
+    return (value === undefined ? defaults : value) as T
+  }
+  const merged: Json = { ...defaults }
+  for (const [key, item] of Object.entries(value)) {
+    merged[key] = key in defaults ? withDefaults((defaults as Json)[key], item) : item
+  }
+  return merged as T
+}
+
+/** Upgrades a project loaded from disk (possibly saved by an older build). */
+export function normalizeProject(raw: unknown): Project {
+  if (!isObject(raw) || typeof raw.id !== 'string') {
+    throw new Error('This file is not a Shorts Creator project')
+  }
+  const base = createProject()
+  return withDefaults({ ...base, id: raw.id }, raw)
+}

@@ -1,0 +1,116 @@
+/* Design tokens. Change --accent to re-theme every active tab, primary button,
+   slider and highlight in the app. */
+:root {
+  color-scheme: dark;
+
+  --accent: #ff3d6e;
+  --accent-contrast: #ffffff;
+  --accent-hover: color-mix(in srgb, var(--accent), white 12%);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 70%, transparent);
+
+  --bg: #09090b;
+  --panel: #111114;
+  --surface: #16161a;
+  --surface-hover: #1c1c21;
+  --surface-active: #232329;
+  --border: #212126;
+  --border-strong: #2e2e36;
+
+  --text: #ececf1;
+  --text-muted: #a0a0ab;
+  --text-faint: #6c6c77;
+
+  --danger: #ff5c72;
+  --danger-soft: color-mix(in srgb, var(--danger) 10%, transparent);
+  --danger-line: color-mix(in srgb, var(--danger) 45%, transparent);
+  --success: #3ddc97;
+  --warning: #ffb547;
+
+  --radius-xl: 14px;
+  --radius-lg: 10px;
+  --radius: 8px;
+  --radius-sm: 6px;
+
+  --font-ui: 'Plus Jakarta Sans Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, ui-monospace, monospace;
+
+  --topbar-height: 48px;
+  --panel-width: 350px;
+  --gap: 8px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* Thin dark scrollbars everywhere */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a42 transparent;
+}
+
+p,
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

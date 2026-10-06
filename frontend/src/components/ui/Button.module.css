@@ -1,0 +1,96 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-weight: 650;
+  white-space: nowrap;
+  transition:
+    background-color 120ms,
+    border-color 120ms,
+    color 120ms,
+    opacity 120ms;
+}
+
+.button:disabled {
+  opacity: 0.42;
+}
+
+.sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.md {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
+.lg {
+  height: 40px;
+  padding: 0 18px;
+  font-size: 13px;
+}
+
+.block {
+  display: flex;
+  width: 100%;
+}
+
+.iconOnly.sm {
+  width: 28px;
+  padding: 0;
+}
+
+.iconOnly.md {
+  width: 34px;
+  padding: 0;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.primary:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+
+.secondary {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.secondary:not(:disabled):hover {
+  background: var(--surface-hover);
+  border-color: #3a3a44;
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.ghost:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.accentIcon {
+  color: var(--accent);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,0 +1,202 @@
+.timeline {
+  --heads-w: 112px;
+  --ruler-h: 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 var(--gap) var(--gap);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+/* Track heights, shared by the header column and the track lanes. */
+.video {
+  --track-h: 56px;
+}
+
+.voiceover {
+  --track-h: 38px;
+}
+
+.captions {
+  --track-h: 28px;
+}
+
+.ranks {
+  --track-h: 28px;
+}
+
+@media (max-height: 820px) {
+  .video {
+    --track-h: 44px;
+  }
+
+  .voiceover {
+    --track-h: 30px;
+  }
+
+  .captions,
+  .ranks {
+    --track-h: 22px;
+  }
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 42px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.tools {
+  display: flex;
+  gap: 2px;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.zoomLabel {
+  margin-left: 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.zoom {
+  --track: 3px;
+  --thumb: 12px;
+  width: 110px;
+}
+
+.body {
+  display: flex;
+  min-height: 0;
+}
+
+.heads {
+  flex: none;
+  width: var(--heads-w);
+  border-right: 1px solid var(--border);
+}
+
+.rulerSpacer {
+  height: var(--ruler-h);
+  border-bottom: 1px solid var(--border);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--track-h);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+
+.head:last-child {
+  border-bottom: 0;
+}
+
+.head svg {
+  color: var(--text-faint);
+}
+
+.scroller {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.content {
+  position: relative;
+  min-width: 100%;
+  cursor: text;
+  user-select: none;
+  touch-action: none;
+}
+
+.ruler {
+  --minor: 10px;
+  position: relative;
+  height: var(--ruler-h);
+  border-bottom: 1px solid var(--border);
+  background-image: linear-gradient(to right, #34343c 1px, transparent 1px);
+  background-size: var(--minor) 5px;
+  background-repeat: repeat-x;
+  background-position: var(--origin, 0) 100%;
+}
+
+.tick {
+  position: absolute;
+  bottom: 0;
+  height: 100%;
+  padding: 3px 0 0 4px;
+  border-left: 1px solid #4a4a54;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.track {
+  position: relative;
+  height: var(--track-h);
+  border-bottom: 1px solid var(--border);
+}
+
+.trackEmpty {
+  position: sticky;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.playhead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -5px;
+  width: 12px;
+  height: 10px;
+  border-radius: 2px 2px 6px 6px;
+  background: var(--accent);
+}

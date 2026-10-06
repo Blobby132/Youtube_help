@@ -1,0 +1,37 @@
+.overlay {
+  position: fixed;
+  inset: var(--topbar-height) 0 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgb(9 9 11 / 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.card {
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.5);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.spin {
+  color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
