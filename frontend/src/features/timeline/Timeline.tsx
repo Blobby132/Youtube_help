@@ -8,9 +8,11 @@ import { formatDuration } from '../../lib/time'
 import { clipsDuration, projectDuration } from '../../state/project/selectors'
 import { useProject } from '../../state/project/store'
 import { setUi, useUi } from '../../state/ui'
+import { playback } from '../preview/playback'
 import { Ruler } from './Ruler'
 import { TIMELINE_ORIGIN_PX, pixelsPerSecond } from './scale'
 import styles from './Timeline.module.css'
+import { VoiceoverLane } from './VoiceoverLane'
 
 interface TrackInfo {
   id: 'video' | 'voiceover' | 'captions' | 'ranks'
@@ -34,6 +36,7 @@ export function Timeline() {
   const clipCount = useProject((p) => p.clips.length)
   const trackLength = useProject(clipsDuration)
   const duration = useProject(projectDuration)
+  const hasVoiceover = useProject((p) => p.voiceover !== null)
   const zoom = useUi((s) => s.zoom)
   const playhead = useUi((s) => s.playhead)
   const pxPerSecond = pixelsPerSecond(zoom)
@@ -43,8 +46,7 @@ export function Timeline() {
   function seekTo(clientX: number) {
     const rect = contentRef.current?.getBoundingClientRect()
     if (!rect) return
-    const time = (clientX - rect.left - TIMELINE_ORIGIN_PX) / pxPerSecond
-    setUi({ playhead: Math.min(Math.max(0, time), duration) })
+    playback.seek((clientX - rect.left - TIMELINE_ORIGIN_PX) / pxPerSecond)
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -110,7 +112,11 @@ export function Timeline() {
             <Ruler pxPerSecond={pxPerSecond} length={visibleSeconds} />
             {TRACKS.map(({ id, empty }) => (
               <div key={id} className={`${styles.track} ${styles[id]}`}>
-                <span className={styles.trackEmpty}>{empty}</span>
+                {id === 'voiceover' && hasVoiceover ? (
+                  <VoiceoverLane pxPerSecond={pxPerSecond} />
+                ) : (
+                  <span className={styles.trackEmpty}>{empty}</span>
+                )}
               </div>
             ))}
             <div className={styles.playhead} style={{ left: TIMELINE_ORIGIN_PX + playhead * pxPerSecond }} aria-hidden />

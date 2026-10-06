@@ -16,15 +16,16 @@ The app is built in stages. Each stage is tested before the next one starts.
 | Stage | What | Status |
 | --- | --- | --- |
 | 1 | Project setup, full layout, autosaved projects | ✅ done |
-| 2 | Script panel and voiceover (Kokoro AI read, record, upload) | next |
-| 3 | Captions with faster-whisper and caption preview | |
+| 2 | Script panel and voiceover (Kokoro AI read, record, upload) | ✅ done |
+| 3 | Captions with faster-whisper and caption preview | next |
 | 4 | Media tab (Pexels and uploads) and timeline | |
 | 5 | Canvas & title, Ranking tab | |
 | 6 | FFmpeg render | |
 
-In stage 1 the layout is complete. The script box, voice picker, sliders, caption style,
-canvas and title settings already save with the project. Buttons for features from later
-stages (Generate AI read, Search, Render, …) are shown but disabled.
+Working now: the full layout, autosaved projects, the script box, and all three ways to make
+a voiceover (AI read, recording, upload) plus background music, with preview playback of the
+voiceover and music. Buttons for later stages (Generate captions, Search, Render, …) are shown
+but disabled.
 
 ## Windows setup
 
@@ -57,9 +58,9 @@ cd Youtube_help
 npm run setup
 ```
 
-`npm run setup` (or double-click `setup.bat`) creates a Python environment in
-`backend\.venv`, installs the Python and npm packages, and creates a `.env` file.
-Run it again whenever you pull an update.
+`npm run setup` (or double-click `setup.bat`) creates a `.env` file and a Python environment
+in `backend\.venv`, installs the Python and npm packages, and downloads the Kokoro voice model
+(about 350 MB, once, into `models\`). Run it again whenever you pull an update.
 
 ### Pexels API key
 
@@ -83,6 +84,49 @@ Or double-click `start.bat`. This starts the backend (port 8765) and the fronten
 both logs, tagged `[api]` and `[web]`. Press **Ctrl+C** to stop both.
 
 If a port is taken, set `BACKEND_PORT` or `FRONTEND_PORT` in `.env`.
+
+## AI voiceover (Kokoro)
+
+The AI read runs [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) locally through ONNX
+Runtime. It uses the **CPU by default**: during development a 46-second voiceover took 12
+seconds on a modest cloud CPU. Pick a voice (▶ plays a sample), set the speed, and click
+**Generate AI read**. The app also takes a microphone recording (silence at both ends is
+trimmed) or an uploaded MP3/WAV/M4A, and optional background music.
+
+### Using an AMD (or other) GPU on Windows
+
+Kokoro can run on any DirectX 12 GPU, including AMD Radeon cards, through DirectML:
+
+1. In `.env`, set `TTS_DEVICE=directml`.
+2. Run `npm run setup` again. It swaps the `onnxruntime` package for `onnxruntime-directml`.
+3. Start the app. The AI read card shows where Kokoro runs, e.g. "runs locally on DirectML (GPU)".
+
+If DirectML is missing or fails, Kokoro falls back to the CPU on its own and logs why in the
+terminal. Set `TTS_DEVICE=cpu` and run setup again to switch back. CPU stays the default
+because it works on every PC.
+
+### How pronunciation works
+
+Text goes through three steps before Kokoro speaks it:
+
+1. **Normalization** (`backend/app/voiceover/normalize.py`): rewrites what speech engines read
+   badly, such as units glued to numbers (`16GB` → "16 gigabytes", `450W`, `2.5GHz`), ranges
+   (`5-10` → "5 to 10"), clock times, `9:16`, `#1` → "number 1", `2x`, `$1.5B` and emojis.
+2. **misaki**, Kokoro's own grapheme-to-phoneme library: a pronunciation dictionary with
+   part-of-speech-aware heteronyms ("read", "live"), and number reading ("9060" → "ninety
+   sixty", "1080p" → "ten eighty p"). Words it doesn't know go to **espeak-ng**.
+3. Kokoro turns the phonemes into audio, a couple of sentences at a time.
+
+misaki is the G2P Kokoro was trained with, so it gives the best results, but its PyPI package
+refuses to install on Python 3.13+. Its English part is pure Python and its dependencies (spaCy,
+espeak-ng) all support Python 3.14, so a copy lives in `backend/app/voiceover/misaki`
+(Apache 2.0, changes marked "Shorts Creator:").
+
+If a word comes out wrong, the easiest fix is to spell it the way it sounds in the script. For
+exact control, misaki's override syntax works too: `[Kokoro](/kˈOkəɹO/)`.
+
+`npm test` writes pronunciation samples (e.g. "The RX 9060 XT has 16GB of VRAM and renders at
+1080p.") in three voices to `backend\tests\output\`, so you can listen to them.
 
 ### Projects
 
@@ -111,16 +155,21 @@ npm test
 ```
 
 runs the backend test suite with pytest (`npm test -- -k projects` passes arguments through).
-CI runs it on the newest Python (3.14) only, plus a lint and type-checked build of the
-frontend.
+It covers the text normalization, phonemes (including the RX 9060 XT sentence), the Kokoro
+engine and its DirectML-to-CPU fallback, voiceover and music uploads, and real speech
+generation once the model is downloaded. CI runs it on the newest Python (3.14) only and keeps
+the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
+the frontend.
 
 ## Project layout
 
 ```
 backend/                FastAPI app (Python)
-  app/core/             settings, logging, error handling, health check
-  app/projects/         project storage (projects/<id>/project.json)
-  app/voiceover/        Kokoro voices (TTS arrives in stage 2)
+  app/core/             settings, logging, errors, health, background jobs, FFmpeg helpers
+  app/projects/         project storage (projects/<id>/project.json, media/ next to it)
+  app/voiceover/        Kokoro engine, text normalization, G2P, voice catalog, uploads
+  app/voiceover/misaki/ vendored misaki English G2P (Apache 2.0)
+  app/mix/              background music
   tests/                pytest suite
 frontend/               React + TypeScript + Vite
   src/components/ui/    shared controls (buttons, tabs, sliders, alerts, ...)
@@ -142,4 +191,9 @@ projects/               your saved projects (not committed)
 - **The page says the backend is not running**: check the `[api]` lines in the terminal
   for the error. The page reconnects by itself once the backend is up.
 - **`ffmpeg` is not recognized**: FFmpeg is not on PATH yet. Open a new terminal after
-  installing, or follow the manual steps above.
+  installing, or follow the manual steps above. Uploads and recordings need it.
+- **"Microphone access was blocked"**: click the icon left of the address bar, allow the
+  microphone for 127.0.0.1, and try again.
+- **The Kokoro download failed**: run `npm run setup` again (or click Generate AI read). Each
+  file's checksum is verified, so a broken download is never used.
+- **Keyboard**: Space plays/pauses the preview (when you aren't typing).

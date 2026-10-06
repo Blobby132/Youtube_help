@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends
+from fastapi.responses import FileResponse
 
 from app.core.config import Settings, get_settings
 from app.projects.store import ProjectStore
@@ -34,3 +35,12 @@ def save_project(
     project: Annotated[dict[str, Any], Body()],
 ) -> dict[str, Any]:
     return store.save(project_id, project)
+
+
+@router.get("/{project_id}/media/{name}")
+def get_media(project_id: str, name: str, store: StoreDep) -> FileResponse:
+    # Media names are unique per file, so browsers may cache them forever.
+    return FileResponse(
+        store.media_file(project_id, name),
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

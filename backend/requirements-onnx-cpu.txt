@@ -1,0 +1,2 @@
+# ONNX Runtime for CPU (default). Installed by `npm run setup` when TTS_DEVICE=cpu.
+onnxruntime>=1.22

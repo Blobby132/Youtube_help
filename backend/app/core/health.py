@@ -15,8 +15,25 @@ from app.core.config import (
     Settings,
     get_settings,
 )
+from app.voiceover.service import get_voiceover_service
 
 router = APIRouter(prefix="/api", tags=["health"])
+
+
+def tts_status(settings: Settings) -> dict[str, Any]:
+    try:
+        import onnxruntime
+
+        providers = onnxruntime.get_available_providers()
+    except ImportError:
+        providers = []
+    service = get_voiceover_service(settings)
+    return {
+        "device": settings.tts_device,
+        "directmlAvailable": "DmlExecutionProvider" in providers,
+        "modelReady": service.model_ready(),
+        "provider": service.engine.provider_label if service.engine.provider else None,
+    }
 
 
 @router.get("/health")
@@ -26,7 +43,8 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, An
         "app": APP_NAME,
         "version": APP_VERSION,
         "python": platform.python_version(),
-        "ffmpeg": shutil.which("ffmpeg") is not None,
+        "ffmpeg": shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None,
         "pexels": settings.pexels_api_key is not None,
         "canvas": {"width": CANVAS_WIDTH, "height": CANVAS_HEIGHT, "fps": FPS},
+        "tts": tts_status(settings),
     }

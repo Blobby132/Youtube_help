@@ -21,11 +21,16 @@ CANVAS_HEIGHT = 1920
 FPS = 30
 
 
+TTS_DEVICES = ("cpu", "directml")
+
+
 @dataclass(frozen=True)
 class Settings:
     projects_dir: Path
     models_dir: Path
     pexels_api_key: str | None
+    # "cpu" (default) or "directml" (GPU on Windows; needs onnxruntime-directml).
+    tts_device: str = "cpu"
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -38,8 +43,10 @@ def _path_from_env(name: str, default: Path) -> Path:
 def get_settings() -> Settings:
     load_dotenv(REPO_ROOT / ".env")
     key = (os.getenv("PEXELS_API_KEY") or "").strip()
+    device = (os.getenv("TTS_DEVICE") or "cpu").strip().lower()
     return Settings(
         projects_dir=_path_from_env("PROJECTS_DIR", REPO_ROOT / "projects"),
         models_dir=_path_from_env("MODELS_DIR", REPO_ROOT / "models"),
         pexels_api_key=key or None,
+        tts_device=device if device in TTS_DEVICES else "cpu",
     )

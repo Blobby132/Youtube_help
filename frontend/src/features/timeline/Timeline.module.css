@@ -200,3 +200,18 @@
   border-radius: 2px 2px 6px 6px;
   background: var(--accent);
 }
+
+.audioBlock {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  overflow: hidden;
+  padding: 2px 0;
+  border: 1px solid var(--accent-line);
+  border-radius: 6px;
+  background: var(--accent-soft);
+}
+
+.audioBlock .wave {
+  --wave-color: color-mix(in srgb, var(--accent) 65%, white);
+}

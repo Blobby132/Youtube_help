@@ -11,13 +11,15 @@ export type VoiceoverSource = 'ai' | 'recording' | 'upload'
 
 export interface Voiceover {
   source: VoiceoverSource
-  /** File name inside the project's media folder. */
+  /** File name inside the project's media folder (always a WAV). */
   file: string
   duration: number
-  /** Kokoro voice id when source is 'ai'. */
+  /** AI read only: Kokoro voice, speed, and the script it read (to spot later edits). */
   voiceId?: string
-  /** Normalised 0..1 peaks for the mini waveform. */
-  peaks: number[]
+  speed?: number
+  script?: string
+  /** Original file name of an upload. */
+  name?: string
 }
 
 export interface MusicTrack {
@@ -135,6 +137,8 @@ export interface Project {
   updatedAt?: string
   script: string
   voiceId: string
+  /** Kokoro speaking speed, 1 = normal. */
+  voiceSpeed: number
   voiceover: Voiceover | null
   mix: Mix
   media: MediaItem[]

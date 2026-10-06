@@ -10,6 +10,7 @@ export function createProject(name = 'Untitled short'): Project {
     version: PROJECT_VERSION,
     script: '',
     voiceId: DEFAULT_VOICE_ID,
+    voiceSpeed: 1,
     voiceover: null,
     mix: { voiceVolume: 1, musicVolume: 0.15, music: null },
     media: [],

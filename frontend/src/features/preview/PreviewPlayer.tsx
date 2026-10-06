@@ -5,27 +5,33 @@ import { projectDuration } from '../../state/project/selectors'
 import { useProject } from '../../state/project/store'
 import { CANVAS } from '../../state/project/types'
 import { setUi, useUi } from '../../state/ui'
+import { playback } from './playback'
 import styles from './PreviewPlayer.module.css'
+import { usePlaybackSync } from './usePlaybackSync'
 
 export function PreviewPlayer() {
   const duration = useProject(projectDuration)
-  const isEmpty = useProject((p) => p.clips.length === 0 && p.voiceover === null)
+  const hasClips = useProject((p) => p.clips.length > 0)
+  const hasVoiceover = useProject((p) => p.voiceover !== null)
   const playhead = useUi((s) => s.playhead)
   const playing = useUi((s) => s.playing)
   const volume = useUi((s) => s.volume)
   const muted = useUi((s) => s.muted)
   const canPlay = duration > 0
+  usePlaybackSync()
 
-  const seek = (time: number) => setUi({ playhead: Math.min(Math.max(0, time), duration) })
+  const seek = (time: number) => playback.seek(time)
 
   return (
     <section className={styles.center} aria-label="Preview">
       <div className={styles.stage}>
         <div className={styles.frame}>
           <canvas className={styles.canvas} width={CANVAS.width} height={CANVAS.height} />
-          {isEmpty && (
+          {!hasClips && (
             <p className={styles.empty}>
-              Generate a voiceover, then fill the timeline with shots, uploads or imported clips.
+              {hasVoiceover
+                ? 'Voiceover ready. Press play to hear it, then fill the timeline with shots, uploads or imported clips.'
+                : 'Generate a voiceover, then fill the timeline with shots, uploads or imported clips.'}
             </p>
           )}
         </div>
@@ -58,7 +64,7 @@ export function PreviewPlayer() {
                 className={styles.play}
                 aria-label={playing ? 'Pause' : 'Play'}
                 disabled={!canPlay}
-                onClick={() => setUi({ playing: !playing })}
+                onClick={() => playback.toggle()}
               >
                 {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
               </button>

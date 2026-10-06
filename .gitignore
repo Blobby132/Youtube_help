@@ -8,6 +8,7 @@ backend/.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+backend/tests/output/
 
 # User data and downloaded models
 projects/*

@@ -3,3 +3,17 @@ fastapi>=0.118
 uvicorn[standard]>=0.37
 python-multipart>=0.0.20
 python-dotenv>=1.1
+
+# AI voiceover: Kokoro runs through ONNX Runtime. ONNX Runtime itself comes from
+# requirements-onnx-cpu.txt or requirements-onnx-directml.txt (scripts/setup.mjs picks one).
+numpy>=2.2
+
+# Text-to-phoneme: misaki (Kokoro's own G2P) is vendored in app/voiceover/misaki;
+# these are its dependencies.
+spacy>=3.8.7,<3.9
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+num2words>=0.5.14
+regex>=2024.11.6
+addict>=2.4
+espeakng-loader>=0.2.4
+phonemizer-fork>=3.3.2
