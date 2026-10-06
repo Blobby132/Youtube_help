@@ -31,6 +31,8 @@ class Settings:
     pexels_api_key: str | None
     # "cpu" (default) or "directml" (GPU on Windows; needs onnxruntime-directml).
     tts_device: str = "cpu"
+    # faster-whisper model for captions; always runs on the CPU.
+    whisper_model: str = "small.en"
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -49,4 +51,5 @@ def get_settings() -> Settings:
         models_dir=_path_from_env("MODELS_DIR", REPO_ROOT / "models"),
         pexels_api_key=key or None,
         tts_device=device if device in TTS_DEVICES else "cpu",
+        whisper_model=(os.getenv("WHISPER_MODEL") or "small.en").strip(),
     )

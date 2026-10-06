@@ -17,3 +17,12 @@ regex>=2024.11.6
 addict>=2.4
 espeakng-loader>=0.2.4
 phonemizer-fork>=3.3.2
+
+# Captions: faster-whisper itself is in requirements-no-deps.txt (installed with --no-deps so
+# it can't pull the CPU onnxruntime in over onnxruntime-directml). These are its dependencies.
+ctranslate2>=4.5,<5
+huggingface-hub>=0.21
+tokenizers>=0.13,<1
+tqdm>=4.66
+# PyAV 19 removed av.open(metadata_errors=...), which faster-whisper 1.2.1 still passes.
+av>=16,<19

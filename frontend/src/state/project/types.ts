@@ -86,8 +86,10 @@ export interface Captions {
   enabled: boolean
   words: CaptionWord[]
   style: CaptionStyle
-  /** Script text the words were transcribed for, to flag stale captions. */
-  sourceScript: string | null
+  /** The voiceover file the words were timed against; a different one means they're stale. */
+  voiceoverFile: string | null
+  /** 'script': your script's spelling with Whisper's timing; 'transcript': what Whisper heard. */
+  source: 'script' | 'transcript' | null
 }
 
 export type BackgroundMode = 'color' | 'blur'

@@ -2,7 +2,8 @@
 //   1. a .env file copied from .env.example
 //   2. a Python virtual environment in backend/.venv with the backend packages
 //      (ONNX Runtime for CPU, or for DirectML when TTS_DEVICE=directml in .env)
-//   3. the Kokoro voice model (~350 MB, downloaded once into models/)
+//   3. the Kokoro voice model (~350 MB) and the Whisper caption model (~480 MB for small.en),
+//      downloaded once into models/
 //   4. the frontend's npm packages
 // It is safe to run again after pulling updates or changing TTS_DEVICE.
 import { spawnSync } from 'node:child_process';
@@ -126,6 +127,9 @@ const pip = (...args) => run(venvPython, ['-m', 'pip', ...args, '--disable-pip-v
 const requirements = (name) => path.join(backendDir, name);
 pip('install', '--upgrade', 'pip', '-q');
 pip('install', '-r', requirements('requirements.txt'), '-r', requirements('requirements-dev.txt'));
+// faster-whisper without its dependencies (they're in requirements.txt), so it can't replace
+// onnxruntime-directml with the CPU onnxruntime.
+pip('install', '--no-deps', '-r', requirements('requirements-no-deps.txt'));
 
 // The CPU and DirectML builds of ONNX Runtime install the same module, so only one may be present.
 step(`ONNX Runtime for ${ttsDevice === 'directml' ? 'DirectML (GPU)' : 'CPU'}`);
@@ -145,9 +149,11 @@ if (isInstalled(other)) {
 console.log(`  Using ${wanted}.`);
 run(venvPython, ['-c', 'import onnxruntime as o; print("  Providers:", ", ".join(o.get_available_providers()))']);
 
-// 4. Kokoro model
+// 4. Models
 step('Kokoro voice model');
 run(venvPython, ['-m', 'app.voiceover.assets'], { cwd: backendDir });
+step('Whisper caption model');
+run(venvPython, ['-m', 'app.captions.assets'], { cwd: backendDir });
 
 // 5. Frontend
 step('Frontend packages');

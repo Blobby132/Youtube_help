@@ -1,0 +1,4 @@
+# Installed with `pip install --no-deps -r requirements-no-deps.txt` (npm run setup does it).
+# Their dependencies are listed in requirements.txt; onnxruntime (used by faster-whisper's
+# voice-activity filter) comes from requirements-onnx-cpu.txt or requirements-onnx-directml.txt.
+faster-whisper==1.2.1

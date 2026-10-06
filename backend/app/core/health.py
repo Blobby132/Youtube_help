@@ -15,6 +15,7 @@ from app.core.config import (
     Settings,
     get_settings,
 )
+from app.captions.service import get_caption_service
 from app.voiceover.service import get_voiceover_service
 
 router = APIRouter(prefix="/api", tags=["health"])
@@ -47,4 +48,8 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, An
         "pexels": settings.pexels_api_key is not None,
         "canvas": {"width": CANVAS_WIDTH, "height": CANVAS_HEIGHT, "fps": FPS},
         "tts": tts_status(settings),
+        "captions": {
+            "model": settings.whisper_model,
+            "modelReady": get_caption_service(settings).model_ready(),
+        },
     }

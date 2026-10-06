@@ -9,10 +9,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.captions import router as captions
 from app.core import health, jobs
 from app.core.config import APP_NAME, APP_VERSION, Settings, get_settings
 from app.core.errors import install_error_handlers
 from app.core.logging import setup_logging
+from app.fonts import router as fonts
 from app.mix import router as mix
 from app.projects import router as projects
 from app.voiceover import router as voiceover
@@ -64,6 +66,8 @@ def create_app(*, warm: bool = True) -> FastAPI:
     app.include_router(projects.router)
     app.include_router(voiceover.router)
     app.include_router(mix.router)
+    app.include_router(captions.router)
+    app.include_router(fonts.router)
     return app
 
 

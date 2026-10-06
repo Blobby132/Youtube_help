@@ -17,15 +17,15 @@ The app is built in stages. Each stage is tested before the next one starts.
 | --- | --- | --- |
 | 1 | Project setup, full layout, autosaved projects | ✅ done |
 | 2 | Script panel and voiceover (Kokoro AI read, record, upload) | ✅ done |
-| 3 | Captions with faster-whisper and caption preview | next |
-| 4 | Media tab (Pexels and uploads) and timeline | |
+| 3 | Captions with faster-whisper and caption preview | ✅ done |
+| 4 | Media tab (Pexels and uploads) and timeline | next |
 | 5 | Canvas & title, Ranking tab | |
 | 6 | FFmpeg render | |
 
-Working now: the full layout, autosaved projects, the script box, and all three ways to make
-a voiceover (AI read, recording, upload) plus background music, with preview playback of the
-voiceover and music. Buttons for later stages (Generate captions, Search, Render, …) are shown
-but disabled.
+Working now: the full layout, autosaved projects, the script box, all three ways to make a
+voiceover (AI read, recording, upload) plus background music, and word-timed captions drawn
+in the preview as it plays. Buttons for later stages (Search, Render, …) are shown but
+disabled.
 
 ## Windows setup
 
@@ -60,7 +60,8 @@ npm run setup
 
 `npm run setup` (or double-click `setup.bat`) creates a `.env` file and a Python environment
 in `backend\.venv`, installs the Python and npm packages, and downloads the Kokoro voice model
-(about 350 MB, once, into `models\`). Run it again whenever you pull an update.
+(about 350 MB) and the Whisper caption model (about 480 MB), once, into `models\`. Run it
+again whenever you pull an update.
 
 ### Pexels API key
 
@@ -128,6 +129,33 @@ exact control, misaki's override syntax works too: `[Kokoro](/kˈOkəɹO/)`.
 `npm test` writes pronunciation samples (e.g. "The RX 9060 XT has 16GB of VRAM and renders at
 1080p.") in three voices to `backend\tests\output\`, so you can listen to them.
 
+## Captions (faster-whisper)
+
+**Generate captions** listens to the voiceover with
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) on the CPU and gets a time for
+every word: on a 4-core cloud CPU a 46-second voiceover took about 8 seconds.
+
+- **Your spelling, Whisper's timing.** Whisper writes what it hears ("RX9060XD", "16 GB"),
+  so the app lines its words up with your script letter by letter and keeps your wording
+  ("RX 9060 XT", "16GB") with the heard timing. If a recording strays from the script (less
+  than 60% of it matches), the captions use what Whisper heard instead.
+- **Starts on the word.** Whisper tends to start words early; each start is moved to where the
+  voice actually begins, so captions don't appear before the word.
+- **Style**: font, size, colours, outline, shadow, position, UPPERCASE, and 1–4 words per
+  caption. Captions also break at sentence ends, after commas, and at pauses. With 2+ words
+  the word being spoken gets the highlight colour.
+- **Fix typos** in the caption list; timing stays the same. Typing more or fewer words shares
+  the caption's time between them. Clear a caption to remove it.
+- After you change the script and regenerate the voiceover, the panel tells you the captions
+  are out of date: regenerate them.
+
+The model is set by `WHISPER_MODEL` in `.env` (`small.en` by default; `base.en` is faster,
+`medium.en` more accurate). It always runs on the CPU.
+
+The caption and title fonts (Montserrat, Anton, Bebas Neue, Poppins, Archivo Black, Bangers,
+Oswald, Inter) are bundled in `backend/app/fonts` under the SIL Open Font License. The preview
+and the final render use the same font files, so text looks the same in both.
+
 ### Projects
 
 Projects save themselves about a second after every change, to
@@ -156,8 +184,10 @@ npm test
 
 runs the backend test suite with pytest (`npm test -- -k projects` passes arguments through).
 It covers the text normalization, phonemes (including the RX 9060 XT sentence), the Kokoro
-engine and its DirectML-to-CPU fallback, voiceover and music uploads, and real speech
-generation once the model is downloaded. CI runs it on the newest Python (3.14) only and keeps
+engine and its DirectML-to-CPU fallback, voiceover and music uploads, caption alignment, and,
+once the models are downloaded, real speech generation and a Kokoro → Whisper → captions
+round trip. `npm run test:frontend` runs the frontend unit tests (caption grouping, editing
+and layout). CI runs it on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
 the frontend.
 
@@ -169,6 +199,8 @@ backend/                FastAPI app (Python)
   app/projects/         project storage (projects/<id>/project.json, media/ next to it)
   app/voiceover/        Kokoro engine, text normalization, G2P, voice catalog, uploads
   app/voiceover/misaki/ vendored misaki English G2P (Apache 2.0)
+  app/captions/         faster-whisper transcription, script alignment, caption job
+  app/fonts/            caption/title fonts (OFL) shared by preview and render
   app/mix/              background music
   tests/                pytest suite
 frontend/               React + TypeScript + Vite
@@ -196,4 +228,6 @@ projects/               your saved projects (not committed)
   microphone for 127.0.0.1, and try again.
 - **The Kokoro download failed**: run `npm run setup` again (or click Generate AI read). Each
   file's checksum is verified, so a broken download is never used.
+- **The Whisper download failed**: run `npm run setup` again (or click Generate captions). It
+  comes from Hugging Face, so that site must be reachable.
 - **Keyboard**: Space plays/pauses the preview (when you aren't typing).

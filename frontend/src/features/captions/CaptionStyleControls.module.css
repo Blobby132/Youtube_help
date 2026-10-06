@@ -4,3 +4,9 @@
   gap: 18px;
   padding-top: 2px;
 }
+
+.hint {
+  margin-top: -4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}

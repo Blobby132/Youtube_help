@@ -12,6 +12,7 @@ import { playback } from '../preview/playback'
 import { Ruler } from './Ruler'
 import { TIMELINE_ORIGIN_PX, pixelsPerSecond } from './scale'
 import styles from './Timeline.module.css'
+import { CaptionsLane } from './CaptionsLane'
 import { VoiceoverLane } from './VoiceoverLane'
 
 interface TrackInfo {
@@ -37,6 +38,7 @@ export function Timeline() {
   const trackLength = useProject(clipsDuration)
   const duration = useProject(projectDuration)
   const hasVoiceover = useProject((p) => p.voiceover !== null)
+  const hasCaptions = useProject((p) => p.captions.words.length > 0)
   const zoom = useUi((s) => s.zoom)
   const playhead = useUi((s) => s.playhead)
   const pxPerSecond = pixelsPerSecond(zoom)
@@ -114,6 +116,8 @@ export function Timeline() {
               <div key={id} className={`${styles.track} ${styles[id]}`}>
                 {id === 'voiceover' && hasVoiceover ? (
                   <VoiceoverLane pxPerSecond={pxPerSecond} />
+                ) : id === 'captions' && hasCaptions ? (
+                  <CaptionsLane pxPerSecond={pxPerSecond} />
                 ) : (
                   <span className={styles.trackEmpty}>{empty}</span>
                 )}

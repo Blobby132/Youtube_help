@@ -48,6 +48,22 @@
   color: var(--text-muted);
 }
 
+.hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  max-width: calc(100% - 24px);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  transform: translateX(-50%);
+}
+
 .controlsArea {
   display: flex;
   flex-direction: column;

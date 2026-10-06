@@ -18,7 +18,8 @@ export function createProject(name = 'Untitled short'): Project {
     captions: {
       enabled: true,
       words: [],
-      sourceScript: null,
+      voiceoverFile: null,
+      source: null,
       // Bold, centered, one word at a time: the classic Shorts look.
       style: {
         fontId: 'montserrat',

@@ -1,6 +1,6 @@
 // Thin fetch wrapper for the FastAPI backend. Errors carry the backend's
 // `detail` message so the UI can show the real reason.
-import type { MusicTrack, Project, ProjectSummary, Voiceover } from '../state/project/types'
+import type { CaptionWord, MusicTrack, Project, ProjectSummary, Voiceover } from '../state/project/types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -52,6 +52,21 @@ export interface Health {
     /** Where Kokoro actually runs once loaded, e.g. "CPU" or "DirectML (GPU)". */
     provider: string | null
   }
+  captions: { model: string; modelReady: boolean }
+}
+
+export interface CaptionResult {
+  words: Omit<CaptionWord, 'id'>[]
+  source: 'script' | 'transcript'
+  /** Share of the script's letters found in what Whisper heard (null without a script). */
+  matched: number | null
+  model: string
+  voiceoverFile: string
+}
+
+export interface FontInfo {
+  id: string
+  name: string
 }
 
 export interface Job<T = unknown> {
@@ -101,4 +116,9 @@ export const api = {
     request<Voiceover>(`${projectPath(projectId)}/voiceover/upload`, upload(file, fileName, { source })),
   uploadMusic: (projectId: string, file: File) =>
     request<MusicTrack>(`${projectPath(projectId)}/music/upload`, upload(file, file.name)),
+  startCaptions: (projectId: string, body: { file: string; script: string | null }) =>
+    request<Job<CaptionResult>>(`${projectPath(projectId)}/captions`, json('POST', body)),
+  fonts: () => request<FontInfo[]>('/api/fonts'),
 }
+
+export const fontUrl = (fontId: string) => `/api/fonts/${encodeURIComponent(fontId)}`

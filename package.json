@@ -9,7 +9,8 @@
     "dev": "node scripts/dev.mjs",
     "test": "node scripts/test.mjs",
     "build": "npm --prefix frontend run build",
-    "lint": "npm --prefix frontend run lint"
+    "lint": "npm --prefix frontend run lint",
+    "test:frontend": "npm --prefix frontend test"
   },
   "engines": {
     "node": ">=20.19"

@@ -1,10 +1,10 @@
 import { Checkbox } from '../../components/ui/Checkbox'
-import { ColorInput, Field, FieldRow, Select, TextInput } from '../../components/ui/Field'
+import { FontSelect } from '../../components/FontSelect'
+import { ColorInput, Field, FieldRow, TextInput } from '../../components/ui/Field'
 import { Section } from '../../components/ui/Section'
 import { Segmented } from '../../components/ui/Segmented'
 import { Slider } from '../../components/ui/Slider'
 import { pixels } from '../../lib/format'
-import { FONTS } from '../../lib/fonts'
 import { updateProject, useProject } from '../../state/project/store'
 import type { CanvasBackground, TitleSettings } from '../../state/project/types'
 import styles from './CanvasPanel.module.css'
@@ -75,15 +75,7 @@ export function CanvasPanel() {
             )}
           </Field>
           <Field label="Font">
-            {(id) => (
-              <Select id={id} value={title.fontId} onChange={(event) => setTitle({ fontId: event.target.value })}>
-                {FONTS.map((font) => (
-                  <option key={font.id} value={font.id}>
-                    {font.name}
-                  </option>
-                ))}
-              </Select>
-            )}
+            {(id) => <FontSelect id={id} value={title.fontId} onChange={(fontId) => setTitle({ fontId })} />}
           </Field>
           <Slider
             label="Size"

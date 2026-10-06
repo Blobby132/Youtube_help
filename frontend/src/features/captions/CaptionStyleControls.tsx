@@ -1,9 +1,9 @@
 import { Checkbox } from '../../components/ui/Checkbox'
-import { ColorInput, Field, FieldRow, Select } from '../../components/ui/Field'
+import { FontSelect } from '../../components/FontSelect'
+import { ColorInput, Field, FieldRow } from '../../components/ui/Field'
 import { Segmented } from '../../components/ui/Segmented'
 import { Slider } from '../../components/ui/Slider'
 import { pixels } from '../../lib/format'
-import { FONTS } from '../../lib/fonts'
 import { updateProject, useProject } from '../../state/project/store'
 import type { CaptionStyle } from '../../state/project/types'
 import styles from './CaptionStyleControls.module.css'
@@ -31,15 +31,7 @@ export function CaptionStyleControls() {
   return (
     <>
       <Field label="Font">
-        {(id) => (
-          <Select id={id} value={style.fontId} onChange={(event) => set({ fontId: event.target.value })}>
-            {FONTS.map((font) => (
-              <option key={font.id} value={font.id}>
-                {font.name}
-              </option>
-            ))}
-          </Select>
-        )}
+        {(id) => <FontSelect id={id} value={style.fontId} onChange={(fontId) => set({ fontId })} />}
       </Field>
       <Slider
         label="Size"
@@ -80,6 +72,9 @@ export function CaptionStyleControls() {
           )}
         </Field>
       </FieldRow>
+      {style.wordsPerCaption === 1 && (
+        <p className={styles.hint}>The spoken-word color shows with 2 or more words per caption.</p>
+      )}
       <FieldRow>
         <Field label="Outline">
           {(id) => (
