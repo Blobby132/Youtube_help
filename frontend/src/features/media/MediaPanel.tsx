@@ -1,4 +1,5 @@
 import { Section } from '../../components/ui/Section'
+import { GenerateSection } from '../generate/GenerateSection'
 import { ImportFiles } from '../library/ImportFiles'
 import { LibraryList } from '../library/LibraryList'
 import { useLibrary } from '../library/libraryStore'
@@ -18,6 +19,8 @@ export function MediaPanel() {
       </Section>
 
       <AutofillSection />
+
+      <GenerateSection />
 
       <Section label="Your files" hint="Import your own clips and images, e.g. AI clips from ComfyUI.">
         <ImportFiles />

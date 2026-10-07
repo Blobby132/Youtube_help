@@ -248,3 +248,24 @@ def test_the_library_is_shared_by_all_projects(client: TestClient, settings: Set
     index = json.loads((settings.library_dir / "library.json").read_text())
     assert [i["id"] for i in index["items"]] == [item["id"]]
     assert not (settings.projects_dir / "p-1" / "media").exists()
+
+
+def test_only_the_sound_is_converted_when_the_picture_is_fine(library: Library) -> None:
+    import subprocess
+
+    from app.library.probe import probe
+
+    source = library.incoming_dir / "LTX_2.5_t2v_00002_.mov"
+    subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+         "-f", "lavfi", "-i", "testsrc2=size=480x864:rate=24:duration=1",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "pcm_s16le", "-shortest", str(source)],
+        check=True,
+    )
+    item = library.add_clip(source, "ai", ClipMetadata(name="Shot"))
+    stored = library.file_path(item["id"])
+    info = probe(stored)
+    assert stored.suffix == ".mp4"
+    assert (info.video_codec, info.audio_codec) == ("h264", "aac")
+    assert item["hasAudio"] is True

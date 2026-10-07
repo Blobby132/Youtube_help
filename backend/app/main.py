@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.autofill import router as autofill
 from app.captions import router as captions
+from app.comfy import router as comfy
+from app.comfy.service import get_generation_service
 from app.core import health, jobs
 from app.core.config import APP_NAME, APP_VERSION, Settings, get_settings
 from app.core.errors import install_error_handlers
@@ -57,8 +59,11 @@ def create_app(*, warm: bool = True) -> FastAPI:
             log.info("Stock video search: %s", " and ".join(sources))
         else:
             log.info("No PIXABAY_API_KEY or PEXELS_API_KEY in .env; stock search stays off until you add one")
+        log.info("ComfyUI (Generate shot): %s, workflow %s", settings.comfyui_url, settings.comfy_workflow.name)
         if warm:
             threading.Thread(target=warm_up, args=(settings,), name="warm-up", daemon=True).start()
+            # Shots still generating when the backend stopped: keep following them.
+            get_generation_service(settings).resume()
         yield
 
     app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
@@ -81,6 +86,7 @@ def create_app(*, warm: bool = True) -> FastAPI:
     app.include_router(library.router)
     app.include_router(pexels.router)
     app.include_router(pixabay.router)
+    app.include_router(comfy.router)
     app.include_router(autofill.router)
     return app
 

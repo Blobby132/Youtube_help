@@ -117,7 +117,73 @@ export interface LibraryItem {
   addedAt: string
   pexels: { videoId: number; url: string; photographer: string; photographerUrl: string | null } | null
   pixabay: { videoId: number; url: string; uploader: string; uploaderUrl: string | null } | null
-  generation: Record<string, unknown> | null
+  /** For AI shots: how it was made. */
+  generation: AiGeneration | null
+}
+
+export type ShotQuality = 'draft' | 'final'
+
+/** How an AI shot was made (stored with the library clip). */
+export interface AiGeneration {
+  prompt: string
+  seed: number
+  quality: ShotQuality
+  megapixels: number
+  resolution: string
+  duration: number
+  fps: number
+  workflow: string
+  basedOn: string | null
+  generatedAt: string
+}
+
+export interface ComfyStatus {
+  reachable: boolean
+  url: string
+  version?: string | null
+  device?: string | null
+  /** Why ComfyUI can't be reached, ready to show. */
+  error: string | null
+  workflow: string
+  /** What's wrong with the workflow file, if anything. */
+  workflowProblem: string | null
+}
+
+export type ShotStatus = 'queued' | 'running' | 'saving' | 'done' | 'error' | 'cancelled'
+
+/** One variation being made by ComfyUI. */
+export interface ShotJob {
+  id: string
+  batch: string
+  variation: number
+  variations: number
+  prompt: string
+  seed: number
+  quality: ShotQuality
+  megapixels: number
+  duration: number
+  fps: number
+  workflow: string
+  basedOn: string | null
+  status: ShotStatus
+  /** Jobs ahead of this one in ComfyUI's queue (0 when it's running). */
+  queuePosition: number | null
+  progress: number
+  message: string
+  itemId: string | null
+  error: string | null
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+export interface ShotRequest {
+  prompt: string
+  duration: number
+  quality: ShotQuality
+  variations: number
+  seed?: number
+  basedOn?: string
 }
 
 /** A stock video source that needs an API key in .env. */
@@ -224,6 +290,13 @@ export const api = {
     request<Job<LibraryItem>>(`/api/${source}/${videoId}/add`, json('POST', {})),
   startAutofill: (sentences: string[], source: StockSource | null) =>
     request<Job<{ source: StockSource; sentences: AutofillSentence[] }>>('/api/autofill', json('POST', { sentences, source })),
+  comfyStatus: () => request<ComfyStatus>('/api/comfy/status'),
+  listShots: () => request<{ jobs: ShotJob[] }>('/api/comfy/shots'),
+  generateShots: (shot: ShotRequest) => request<{ jobs: ShotJob[] }>('/api/comfy/shots', json('POST', shot)),
+  cancelShot: (jobId: string) => request<ShotJob>(`/api/comfy/shots/${encodeURIComponent(jobId)}/cancel`, json('POST', {})),
+  dismissShot: (jobId: string) =>
+    request<{ deleted: string }>(`/api/comfy/shots/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
+  clearShots: () => request<{ jobs: ShotJob[] }>('/api/comfy/shots/clear', json('POST', {})),
   getPronunciations: () => request<{ entries: PronunciationEntry[] }>('/api/pronunciations'),
   savePronunciations: (entries: PronunciationEntry[]) =>
     request<{ entries: PronunciationEntry[] }>('/api/pronunciations', json('PUT', { entries })),

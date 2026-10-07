@@ -126,8 +126,8 @@ def probe(path: Path) -> MediaInfo:
 
 
 def browser_format(info: MediaInfo, extension: str) -> str | None:
-    """How to store a video so the browser preview plays it:
-    "keep" as is, "mp4"/"webm" to repackage without re-encoding, None to convert."""
+    """How to store a video so the browser preview plays it: "keep" as is, "mp4"/"webm" to
+    repackage without re-encoding, "audio" to convert only the sound, None to convert."""
     if info.pixel_format not in _PLAYABLE_PIXELS:
         return None
     video, audio = info.video_codec, info.audio_codec
@@ -135,6 +135,8 @@ def browser_format(info: MediaInfo, extension: str) -> str | None:
         return "keep" if extension in (".mp4", ".m4v") else "mp4"
     if video in _WEBM_VIDEO and (audio is None or audio in _WEBM_AUDIO):
         return "keep" if extension == ".webm" else "webm"
+    if video in _MP4_VIDEO:
+        return "audio"  # the picture is fine; only the sound (e.g. PCM or FLAC) needs converting
     return None
 
 
@@ -190,6 +192,15 @@ def make_playable(
         flags = ["-movflags", "+faststart"] if plan == "mp4" else []
         run_ffmpeg(["-i", str(source), "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", *flags, str(target)],
                    f"repackage {source.name}", info.duration, on_progress)
+        return target
+
+    if plan == "audio":
+        target = folder / f"{stem}.mp4"
+        run_ffmpeg(
+            ["-i", str(source), "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+             "-movflags", "+faststart", str(target)],
+            f"convert the sound of {source.name}", info.duration, on_progress,
+        )
         return target
 
     # Re-encode: H.264 (yuv420p, even size) + AAC, which every browser and the final render read.

@@ -3,8 +3,10 @@ fastapi>=0.118
 uvicorn[standard]>=0.37
 python-multipart>=0.0.20
 python-dotenv>=1.1
-# Pexels API and video downloads
+# Pexels and Pixabay APIs, video downloads, ComfyUI
 httpx>=0.28
+# ComfyUI's live progress (its websocket); also installed by uvicorn[standard]
+websockets>=13
 
 # AI voiceover: Kokoro runs through ONNX Runtime. ONNX Runtime itself comes from
 # requirements-onnx-cpu.txt or requirements-onnx-directml.txt (scripts/setup.mjs picks one).
