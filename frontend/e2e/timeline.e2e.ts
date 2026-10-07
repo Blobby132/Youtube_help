@@ -136,3 +136,38 @@ test('reorder, trim, split, delete and undo on the video track', async ({ page }
   await page.getByRole('button', { name: 'Fit to voiceover' }).click()
   await expect(page.getByTestId('timeline-gap')).toHaveCount(0)
 })
+
+test('the selected clip shows a crop control beside the preview', async ({ page }) => {
+  // A wide clip, so it can be panned left and right.
+  await fakeBackend(page, { library: [libraryItem('m-wide', { name: 'Wide city', width: 1920, height: 1080, lowRes: false })] })
+  await page.goto('/')
+  await expect(page.locator('[data-state="saved"]')).toBeVisible()
+  await makeVoiceoverAndCaptions(page)
+  await page.getByRole('tab', { name: 'Media' }).click()
+
+  const settings = page.getByRole('complementary', { name: 'Clip settings' })
+  await page.getByRole('button', { name: 'Add “Wide city” to the timeline' }).click()
+  await expect(settings).toBeVisible()
+  await expect(settings).toContainText('Wide city')
+  const crop = settings.getByRole('slider', { name: 'Crop position' })
+  await expect(crop).toBeVisible()
+  await expect(settings).toContainText('Or drag the picture in the preview to move the crop.')
+  await expect(settings.getByText('Left', { exact: true })).toBeVisible()
+
+  await crop.fill('0.2')
+  await expect(crop).toHaveValue('0.2')
+
+  // Dragging the picture to the left shows more of its right side.
+  await page.getByRole('slider', { name: 'Seek' }).fill('0.5')
+  const frame = (await page.getByTestId('preview-canvas').boundingBox())!
+  await page.mouse.move(frame.x + frame.width / 2, frame.y + frame.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(frame.x + frame.width / 2 - 60, frame.y + frame.height / 2, { steps: 5 })
+  await page.mouse.up()
+  expect(Number(await crop.inputValue())).toBeGreaterThan(0.2)
+
+  // Nothing selected: the card says how to get the settings.
+  await page.getByRole('slider', { name: 'Seek' }).click({ position: { x: 2, y: 2 } })
+  await page.locator('[data-testid="video-lane"]').click({ position: { x: 600, y: 10 } })
+  await expect(settings).toContainText('Select a clip on the timeline')
+})

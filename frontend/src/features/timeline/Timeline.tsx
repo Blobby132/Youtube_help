@@ -10,7 +10,7 @@ import { useProject } from '../../state/project/store'
 import { setUi, useUi } from '../../state/ui'
 import { playback } from '../preview/playback'
 import { CaptionsLane } from './CaptionsLane'
-import { ClipInspector } from './ClipInspector'
+import { ClipSettings } from './ClipSettings'
 import { Ruler } from './Ruler'
 import { TIMELINE_ORIGIN_PX, pixelsPerSecond } from './scale'
 import styles from './Timeline.module.css'
@@ -53,6 +53,7 @@ export function Timeline() {
   const canUndo = useTimelineHistory((s) => s.past.length > 0)
   const canRedo = useTimelineHistory((s) => s.future.length > 0)
   const notice = useTimelineHistory((s) => s.notice)
+  const settingsInPreview = useUi((s) => s.clipSettingsInPreview)
   const pxPerSecond = pixelsPerSecond(zoom)
   const visibleSeconds = Math.max(Math.max(duration, lastClipEnd) + TAIL_SECONDS, MIN_VISIBLE_SECONDS)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -108,8 +109,9 @@ export function Timeline() {
             disabled={!clipCount}
             title="Cut the clip at the playhead in two"
             onClick={() => splitAtPlayhead()}
+            aria-label="Split"
           >
-            Split
+            <span className={styles.toolLabel}>Split</span>
           </Button>
           <Button
             variant="ghost"
@@ -118,8 +120,9 @@ export function Timeline() {
             disabled={!selectedId}
             title="Remove the selected clip (Delete)"
             onClick={() => deleteSelected()}
+            aria-label="Delete"
           >
-            Delete
+            <span className={styles.toolLabel}>Delete</span>
           </Button>
           <Button
             variant="ghost"
@@ -132,8 +135,9 @@ export function Timeline() {
                 : 'Make a voiceover first: the video is as long as the voiceover'
             }
             onClick={() => fitClips()}
+            aria-label="Fit to voiceover"
           >
-            Fit to voiceover
+            <span className={styles.toolLabel}>Fit to voiceover</span>
           </Button>
           <span className={styles.toolDivider} aria-hidden />
           <Button variant="ghost" size="sm" icon={Undo2} disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={undo} />
@@ -145,7 +149,7 @@ export function Timeline() {
               {notice}
             </p>
           ) : (
-            <ClipInspector />
+            !settingsInPreview && clipCount > 0 && <ClipSettings variant="bar" />
           )}
         </div>
         <div className={styles.meta}>

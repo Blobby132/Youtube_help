@@ -12,8 +12,14 @@ const fontFile = readFileSync(path.join(here, '../../backend/app/fonts/files/Mon
 const clipFile = readFileSync(path.join(here, 'fixtures/red-then-blue.webm'))
 const thumbFile = readFileSync(path.join(here, 'fixtures/thumb.jpg'))
 
-export const MISSING_KEY =
-  'Stock search needs a free Pexels API key. Get one at https://www.pexels.com/api/, add PEXELS_API_KEY=your-key to the .env file in the app folder, then restart the app.'
+export const MISSING_KEY = {
+  pexels:
+    'Stock search needs a free Pexels API key. Get one at https://www.pexels.com/api/, add PEXELS_API_KEY=your-key to the .env file in the app folder, then restart the app.',
+  pixabay:
+    'Pixabay search needs a free API key. Log in at pixabay.com, copy your key from https://pixabay.com/api/docs/, add PIXABAY_API_KEY=your-key to the .env file in the app folder, then restart the app.',
+} as const
+
+type Source = keyof typeof MISSING_KEY
 
 export interface FakeLibraryItem {
   id: string
@@ -27,12 +33,13 @@ export interface FakeLibraryItem {
   fps: number | null
   hasAudio: boolean
   size: number
-  source: 'pexels' | 'upload' | 'ai'
+  source: 'pexels' | 'pixabay' | 'upload' | 'ai'
   aiGenerated: boolean
   lowRes: boolean
   originalName: string | null
   addedAt: string
   pexels: { videoId: number; url: string; photographer: string; photographerUrl: string | null } | null
+  pixabay: { videoId: number; url: string; uploader: string; uploaderUrl: string | null } | null
   generation: null
 }
 
@@ -55,32 +62,41 @@ export function libraryItem(id: string, overrides: Partial<FakeLibraryItem> = {}
     originalName: `${id}.webm`,
     addedAt: '2026-10-07T00:00:00Z',
     pexels: null,
+    pixabay: null,
     generation: null,
     ...overrides,
   }
 }
 
-export function pexelsResult(id: number, title: string) {
+export function stockResult(source: Source, id: number, title: string, orientation: 'portrait' | 'landscape' = 'portrait') {
+  const [width, height] = orientation === 'portrait' ? [1080, 1920] : [1920, 1080]
   return {
+    source,
     id,
     title,
-    url: `https://www.pexels.com/video/${title.toLowerCase().replaceAll(' ', '-')}-${id}/`,
+    url: source === 'pexels' ? `https://www.pexels.com/video/${title.toLowerCase().replaceAll(' ', '-')}-${id}/` : `https://pixabay.com/videos/id-${id}/`,
     duration: 12,
-    width: 1080,
-    height: 1920,
-    image: '/fake-pexels/thumb.jpg',
-    photographer: 'Jane Doe',
-    photographerUrl: 'https://www.pexels.com/@jane',
-    previewUrl: '/fake-pexels/preview.webm',
-    file: { width: 1080, height: 1920, fps: 25, quality: 'hd' },
+    width,
+    height,
+    orientation,
+    image: '/fake-stock/thumb.jpg',
+    author: source === 'pexels' ? 'Jane Doe' : 'SeaFilms',
+    authorUrl: null,
+    previewUrl: '/fake-stock/preview.webm',
+    file: { width, height, fps: null, quality: 'hd' },
     libraryId: null as string | null,
   }
 }
 
+export const pexelsResult = (id: number, title: string) => stockResult('pexels', id, title)
+
+type Result = ReturnType<typeof stockResult>
+
 interface FakeOptions {
   library?: FakeLibraryItem[]
-  /** null: no API key; otherwise the results every search returns. */
-  pexels?: ReturnType<typeof pexelsResult>[] | null
+  /** For each source, null (or left out): no API key; otherwise the videos searches find. */
+  pexels?: Result[] | null
+  pixabay?: Result[] | null
 }
 
 /** One second of silent 16-bit mono WAV, enough for the waveform to decode. */
@@ -130,7 +146,10 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
   const projects = new Map<string, Record<string, unknown>>()
   const jobs = new Map<string, Job>()
   const library: FakeLibraryItem[] = [...(options.library ?? [])]
-  const pexels = options.pexels === undefined ? [] : options.pexels
+  const stock: Record<Source, Result[] | null> = { pexels: options.pexels ?? null, pixabay: options.pixabay ?? null }
+  /** Searches allowed before the fake Pixabay says the rate limit is used up (null: no limit). */
+  const limits: Record<Source, number | null> = { pexels: null, pixabay: null }
+  const searched: { source: Source; query: string; orientation: string }[] = []
   let pronunciations: unknown[] = []
   let counter = 0
 
@@ -142,7 +161,7 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
     return job
   }
 
-  await page.route('**/fake-pexels/**', (route) =>
+  await page.route('**/fake-stock/**', (route) =>
     route.request().url().endsWith('.jpg')
       ? route.fulfill({ status: 200, contentType: 'image/jpeg', body: thumbFile })
       : serveFile(route, clipFile, 'video/webm'),
@@ -161,7 +180,8 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
         version: 'test',
         python: '3.14',
         ffmpeg: true,
-        pexels: pexels !== null,
+        pexels: stock.pexels !== null,
+        pixabay: stock.pixabay !== null,
         canvas: { width: 1080, height: 1920, fps: 30 },
         tts: { device: 'cpu', directmlAvailable: false, modelReady: true, provider: 'CPU' },
         captions: { model: 'small.en', modelReady: true },
@@ -203,24 +223,38 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
         return json(route, { deleted: item.id, usedIn: [] })
       }
     }
-    if (parts[0] === 'pexels') {
-      if (pexels === null) return json(route, { detail: MISSING_KEY }, 400)
+    if (parts[0] === 'pexels' || parts[0] === 'pixabay') {
+      const source = parts[0]
+      const videos = stock[source]
+      if (videos === null) return json(route, { detail: MISSING_KEY[source] }, 400)
       if (parts[1] === 'search') {
-        return json(route, { page: 1, totalResults: pexels.length, hasMore: false, results: pexels })
+        const orientation = url.searchParams.get('orientation') ?? 'portrait'
+        searched.push({ source, query: url.searchParams.get('query') ?? '', orientation })
+        const limit = limits[source]
+        if (limit !== null) {
+          if (limit <= 0) {
+            return json(route, { detail: "Pixabay's rate limit is used up (100 requests a minute). You can search Pixabay again in 3 seconds, at 12:00:03.", retryAfter: 3 }, 429)
+          }
+          limits[source] = limit - 1
+        }
+        const results = videos.filter((r) => orientation === 'any' || r.orientation === orientation)
+        return json(route, { source, page: 1, totalResults: results.length, totalExact: true, hasMore: false, results })
       }
-      const result = pexels.find((r) => r.id === Number(parts[1]))
+      const result = videos.find((r) => r.id === Number(parts[1]))
       if (parts[2] === 'add' && result) {
-        const item = libraryItem(`m-pexels${result.id}`, {
+        const credit = { videoId: result.id, url: result.url }
+        const item = libraryItem(`m-${source}${result.id}`, {
           name: result.title,
-          source: 'pexels',
-          width: 1080,
-          height: 1920,
+          source,
+          width: result.file.width,
+          height: result.file.height,
           lowRes: false,
-          pexels: { videoId: result.id, url: result.url, photographer: result.photographer, photographerUrl: result.photographerUrl },
+          pexels: source === 'pexels' ? { ...credit, photographer: result.author, photographerUrl: null } : null,
+          pixabay: source === 'pixabay' ? { ...credit, uploader: result.author, uploaderUrl: null } : null,
         })
         library.unshift(item)
         result.libraryId = item.id
-        return json(route, finished('pexels', item))
+        return json(route, finished(source, item))
       }
     }
     if (parts[0] === 'projects') {
@@ -259,5 +293,5 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
     return json(route, { detail: `fake backend: no route for ${method} ${url.pathname}` }, 404)
   })
 
-  return { library, projects }
+  return { library, projects, searched, limits }
 }

@@ -11,7 +11,7 @@ import { endMediaDrag, startMediaDrag } from './dragMedia'
 import styles from './Library.module.css'
 import { clearLibraryError, deleteItem, updateItem, useLibrary } from './libraryStore'
 
-const SOURCE_LABEL: Record<MediaSource, string> = { pexels: 'Pexels', upload: 'Imported', ai: 'AI shot' }
+const SOURCE_LABEL: Record<MediaSource, string> = { pexels: 'Pexels', pixabay: 'Pixabay', upload: 'Imported', ai: 'AI shot' }
 
 /** Every clip in the shared library. Drag one onto the timeline, or use +. */
 export function LibraryList() {
@@ -85,6 +85,11 @@ function LibraryCard({ item, onTimeline }: { item: LibraryItem; onTimeline: bool
         {item.pexels && (
           <a className={styles.creditLink} href={item.pexels.url} target="_blank" rel="noreferrer">
             by {item.pexels.photographer} on Pexels
+          </a>
+        )}
+        {item.pixabay && (
+          <a className={styles.creditLink} href={item.pixabay.url} target="_blank" rel="noreferrer">
+            by {item.pixabay.uploader} on Pixabay
           </a>
         )}
         <div className={styles.actions}>

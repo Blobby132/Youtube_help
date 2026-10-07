@@ -37,6 +37,8 @@ class Settings:
     data_dir: Path = REPO_ROOT / "data"
     # The media library shared by all projects (stock clips, imports, AI shots).
     library_dir: Path = REPO_ROOT / "library"
+    # Free key from https://pixabay.com/api/docs/ for Pixabay stock video search.
+    pixabay_api_key: str | None = None
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -49,6 +51,7 @@ def _path_from_env(name: str, default: Path) -> Path:
 def get_settings() -> Settings:
     load_dotenv(REPO_ROOT / ".env")
     key = (os.getenv("PEXELS_API_KEY") or "").strip()
+    pixabay_key = (os.getenv("PIXABAY_API_KEY") or "").strip()
     device = (os.getenv("TTS_DEVICE") or "cpu").strip().lower()
     return Settings(
         projects_dir=_path_from_env("PROJECTS_DIR", REPO_ROOT / "projects"),
@@ -58,4 +61,5 @@ def get_settings() -> Settings:
         whisper_model=(os.getenv("WHISPER_MODEL") or "small.en").strip(),
         data_dir=_path_from_env("DATA_DIR", REPO_ROOT / "data"),
         library_dir=_path_from_env("LIBRARY_DIR", REPO_ROOT / "library"),
+        pixabay_api_key=pixabay_key or None,
     )

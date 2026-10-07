@@ -19,6 +19,7 @@ from app.fonts import router as fonts
 from app.library import router as library
 from app.mix import router as mix
 from app.pexels import router as pexels
+from app.pixabay import router as pixabay
 from app.projects import router as projects
 from app.pronunciations import router as pronunciations
 from app.voiceover import router as voiceover
@@ -51,8 +52,11 @@ def create_app(*, warm: bool = True) -> FastAPI:
         log.info("%s %s ready. Projects folder: %s", APP_NAME, APP_VERSION, settings.projects_dir)
         log.info("Media library: %s", settings.library_dir)
         log.info("AI voice runs on: %s", "DirectML (GPU), CPU fallback" if settings.tts_device == "directml" else "CPU")
-        if settings.pexels_api_key is None:
-            log.info("PEXELS_API_KEY is not set; stock search stays off until you add it to .env")
+        sources = [name for name, key in (("Pixabay", settings.pixabay_api_key), ("Pexels", settings.pexels_api_key)) if key]
+        if sources:
+            log.info("Stock video search: %s", " and ".join(sources))
+        else:
+            log.info("No PIXABAY_API_KEY or PEXELS_API_KEY in .env; stock search stays off until you add one")
         if warm:
             threading.Thread(target=warm_up, args=(settings,), name="warm-up", daemon=True).start()
         yield
@@ -76,6 +80,7 @@ def create_app(*, warm: bool = True) -> FastAPI:
     app.include_router(pronunciations.router)
     app.include_router(library.router)
     app.include_router(pexels.router)
+    app.include_router(pixabay.router)
     app.include_router(autofill.router)
     return app
 
