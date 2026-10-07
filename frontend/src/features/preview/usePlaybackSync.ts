@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { mediaUrl } from '../../lib/api'
 import { useProject } from '../../state/project/store'
 import { useUi } from '../../state/ui'
+import { clipPlayer } from './clipPlayer'
 import { playback } from './playback'
 
 /** Keeps the playback engine in step with the project's audio and the volume controls. */
@@ -25,10 +26,17 @@ export function usePlaybackSync() {
 
   useEffect(() => {
     playback.setVolumes({ preview, muted, voice: voiceVolume, music: musicVolume })
+    clipPlayer.setVolume(preview, muted)
   }, [preview, muted, voiceVolume, musicVolume])
 
   // Switching projects stops playback.
-  useEffect(() => () => playback.pause(), [projectId])
+  useEffect(
+    () => () => {
+      playback.pause()
+      clipPlayer.reset()
+    },
+    [projectId],
+  )
 
   // Space toggles play/pause unless you are typing or on a button.
   useEffect(() => {

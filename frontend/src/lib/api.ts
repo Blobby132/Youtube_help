@@ -85,6 +85,66 @@ export interface Job<T = unknown> {
   error: string | null
 }
 
+export type MediaSource = 'pexels' | 'upload' | 'ai'
+
+/** A clip or image in the media library, which all projects share. */
+export interface LibraryItem {
+  id: string
+  kind: 'video' | 'image'
+  name: string
+  file: string
+  thumbnail: string | null
+  width: number
+  height: number
+  /** Seconds; null for images. */
+  duration: number | null
+  fps: number | null
+  hasAudio: boolean
+  size: number
+  /** Where it came from: a Pexels download, an import, or an AI shot made by the app. */
+  source: MediaSource
+  aiGenerated: boolean
+  /** Narrower than 1080 pixels, so it's scaled up to fill the frame. */
+  lowRes: boolean
+  originalName: string | null
+  addedAt: string
+  pexels: { videoId: number; url: string; photographer: string; photographerUrl: string | null } | null
+  generation: Record<string, unknown> | null
+}
+
+export interface PexelsResult {
+  id: number
+  title: string
+  url: string
+  duration: number
+  width: number
+  height: number
+  image: string
+  photographer: string
+  photographerUrl: string | null
+  /** A small file for the hover preview, played straight from Pexels. */
+  previewUrl: string | null
+  /** The file that "Add" downloads. */
+  file: { width: number; height: number; fps: number | null; quality: string | null }
+  /** Set when this video is already in the library. */
+  libraryId: string | null
+}
+
+export interface PexelsSearchResult {
+  page: number
+  totalResults: number
+  hasMore: boolean
+  results: PexelsResult[]
+}
+
+export interface AutofillSentence {
+  text: string
+  keywords: string[]
+  query: string | null
+  item: LibraryItem | null
+  error: string | null
+}
+
 export interface Voice {
   id: string
   name: string
@@ -106,6 +166,9 @@ const projectPath = (projectId: string) => `/api/projects/${encodeURIComponent(p
 export const mediaUrl = (projectId: string, file: string) =>
   `${projectPath(projectId)}/media/${encodeURIComponent(file)}`
 
+export const libraryFileUrl = (itemId: string) => `/api/library/${encodeURIComponent(itemId)}/file`
+export const libraryThumbnailUrl = (itemId: string) => `/api/library/${encodeURIComponent(itemId)}/thumbnail`
+
 export const voicePreviewUrl = (voiceId: string) => `/api/voices/${encodeURIComponent(voiceId)}/preview`
 
 export const api = {
@@ -125,6 +188,23 @@ export const api = {
   startCaptions: (projectId: string, body: { file: string; script: string | null }) =>
     request<Job<CaptionResult>>(`${projectPath(projectId)}/captions`, json('POST', body)),
   fonts: () => request<FontInfo[]>('/api/fonts'),
+  library: () => request<LibraryItem[]>('/api/library'),
+  importClip: (file: File, aiGenerated: boolean) =>
+    request<Job<LibraryItem>>('/api/library/import', upload(file, file.name, { aiGenerated: String(aiGenerated) })),
+  updateLibraryItem: (itemId: string, changes: { name?: string; aiGenerated?: boolean }) =>
+    request<LibraryItem>(`/api/library/${encodeURIComponent(itemId)}`, json('PATCH', changes)),
+  deleteLibraryItem: (itemId: string, force = false) =>
+    request<{ deleted: string; usedIn: string[] }>(
+      `/api/library/${encodeURIComponent(itemId)}${force ? '?force=true' : ''}`,
+      { method: 'DELETE' },
+    ),
+  pexelsSearch: (query: string, page: number, orientation: 'portrait' | 'any') =>
+    request<PexelsSearchResult>(
+      `/api/pexels/search?${new URLSearchParams({ query, page: String(page), orientation })}`,
+    ),
+  addFromPexels: (videoId: number) => request<Job<LibraryItem>>(`/api/pexels/${videoId}/add`, json('POST', {})),
+  startAutofill: (sentences: string[]) =>
+    request<Job<{ sentences: AutofillSentence[] }>>('/api/autofill', json('POST', { sentences })),
   getPronunciations: () => request<{ entries: PronunciationEntry[] }>('/api/pronunciations'),
   savePronunciations: (entries: PronunciationEntry[]) =>
     request<{ entries: PronunciationEntry[] }>('/api/pronunciations', json('PUT', { entries })),

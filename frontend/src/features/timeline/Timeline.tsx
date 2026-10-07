@@ -1,18 +1,21 @@
 import type { LucideIcon } from 'lucide-react'
-import { AudioLines, Captions, Film, ListOrdered, RefreshCw, Scissors, Trash2 } from 'lucide-react'
+import { AudioLines, Captions, Film, ListOrdered, Redo2, RefreshCw, Scissors, Trash2, Undo2 } from 'lucide-react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Button } from '../../components/ui/Button'
 import { Range } from '../../components/ui/Slider'
 import { formatDuration } from '../../lib/time'
-import { clipsDuration, projectDuration } from '../../state/project/selectors'
+import { clipsEnd, projectDuration } from '../../state/project/selectors'
 import { useProject } from '../../state/project/store'
 import { setUi, useUi } from '../../state/ui'
 import { playback } from '../preview/playback'
+import { CaptionsLane } from './CaptionsLane'
+import { ClipInspector } from './ClipInspector'
 import { Ruler } from './Ruler'
 import { TIMELINE_ORIGIN_PX, pixelsPerSecond } from './scale'
 import styles from './Timeline.module.css'
-import { CaptionsLane } from './CaptionsLane'
+import { deleteSelected, fitClips, redo, splitAtPlayhead, undo, useTimelineHistory } from './timelineEdits'
+import { VideoLane } from './VideoLane'
 import { VoiceoverLane } from './VoiceoverLane'
 
 interface TrackInfo {
@@ -23,7 +26,7 @@ interface TrackInfo {
 }
 
 const TRACKS: TrackInfo[] = [
-  { id: 'video', label: 'Video', icon: Film, empty: 'Add clips from the Media tab' },
+  { id: 'video', label: 'Video', icon: Film, empty: '' },
   { id: 'voiceover', label: 'Voiceover', icon: AudioLines, empty: 'Generate, record or upload a voiceover' },
   { id: 'captions', label: 'Captions', icon: Captions, empty: 'Generate captions in the Captions tab' },
   { id: 'ranks', label: 'Ranks', icon: ListOrdered, empty: 'Ranking overlays from the Ranking tab' },
@@ -33,17 +36,47 @@ const TRACKS: TrackInfo[] = [
 const TAIL_SECONDS = 5
 const MIN_VISIBLE_SECONDS = 30
 
+/** Typing in a field must not trigger timeline shortcuts. */
+function isTyping(target: EventTarget | null) {
+  return target instanceof HTMLElement && !!target.closest('input, textarea, select, [contenteditable="true"]')
+}
+
 export function Timeline() {
   const clipCount = useProject((p) => p.clips.length)
-  const trackLength = useProject(clipsDuration)
   const duration = useProject(projectDuration)
+  const lastClipEnd = useProject(clipsEnd)
   const hasVoiceover = useProject((p) => p.voiceover !== null)
   const hasCaptions = useProject((p) => p.captions.words.length > 0)
   const zoom = useUi((s) => s.zoom)
   const playhead = useUi((s) => s.playhead)
+  const selectedId = useUi((s) => s.selectedClipId)
+  const canUndo = useTimelineHistory((s) => s.past.length > 0)
+  const canRedo = useTimelineHistory((s) => s.future.length > 0)
+  const notice = useTimelineHistory((s) => s.notice)
   const pxPerSecond = pixelsPerSecond(zoom)
-  const visibleSeconds = Math.max(duration + TAIL_SECONDS, MIN_VISIBLE_SECONDS)
+  const visibleSeconds = Math.max(Math.max(duration, lastClipEnd) + TAIL_SECONDS, MIN_VISIBLE_SECONDS)
   const contentRef = useRef<HTMLDivElement>(null)
+
+  // Delete removes the selected clip; Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo clip edits.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isTyping(event.target)) return
+      const mod = event.ctrlKey || event.metaKey
+      if (mod && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) redo()
+        else undo()
+      } else if (mod && event.key.toLowerCase() === 'y') {
+        event.preventDefault()
+        redo()
+      } else if ((event.key === 'Delete' || event.key === 'Backspace') && useUi.getState().selectedClipId) {
+        event.preventDefault()
+        deleteSelected()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   function seekTo(clientX: number) {
     const rect = contentRef.current?.getBoundingClientRect()
@@ -54,6 +87,8 @@ export function Timeline() {
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
+    // Clicking outside a clip clears the selection.
+    setUi({ selectedClipId: null })
     seekTo(event.clientX)
   }
 
@@ -66,19 +101,56 @@ export function Timeline() {
       <header className={styles.toolbar}>
         <h2 className={styles.title}>Timeline</h2>
         <div className={styles.tools}>
-          <Button variant="ghost" size="sm" icon={Scissors} disabled>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Scissors}
+            disabled={!clipCount}
+            title="Cut the clip at the playhead in two"
+            onClick={() => splitAtPlayhead()}
+          >
             Split
           </Button>
-          <Button variant="ghost" size="sm" icon={Trash2} disabled>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Trash2}
+            disabled={!selectedId}
+            title="Remove the selected clip (Delete)"
+            onClick={() => deleteSelected()}
+          >
             Delete
           </Button>
-          <Button variant="ghost" size="sm" icon={RefreshCw} disabled>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={RefreshCw}
+            disabled={!clipCount || !hasVoiceover}
+            title={
+              hasVoiceover
+                ? 'Close the gaps and end exactly with the voiceover, keeping your cuts'
+                : 'Make a voiceover first: the video is as long as the voiceover'
+            }
+            onClick={() => fitClips()}
+          >
             Fit to voiceover
           </Button>
+          <span className={styles.toolDivider} aria-hidden />
+          <Button variant="ghost" size="sm" icon={Undo2} disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={undo} />
+          <Button variant="ghost" size="sm" icon={Redo2} disabled={!canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={redo} />
+        </div>
+        <div className={styles.middle}>
+          {notice ? (
+            <p className={styles.notice} role="status">
+              {notice}
+            </p>
+          ) : (
+            <ClipInspector />
+          )}
         </div>
         <div className={styles.meta}>
           <span>
-            {clipCount} {clipCount === 1 ? 'clip' : 'clips'} · {formatDuration(trackLength)}
+            {clipCount} {clipCount === 1 ? 'clip' : 'clips'} · {formatDuration(duration)}
           </span>
           <span className={styles.zoomLabel}>Zoom</span>
           <Range
@@ -114,7 +186,9 @@ export function Timeline() {
             <Ruler pxPerSecond={pxPerSecond} length={visibleSeconds} />
             {TRACKS.map(({ id, empty }) => (
               <div key={id} className={`${styles.track} ${styles[id]}`}>
-                {id === 'voiceover' && hasVoiceover ? (
+                {id === 'video' ? (
+                  <VideoLane pxPerSecond={pxPerSecond} />
+                ) : id === 'voiceover' && hasVoiceover ? (
                   <VoiceoverLane pxPerSecond={pxPerSecond} />
                 ) : id === 'captions' && hasCaptions ? (
                   <CaptionsLane pxPerSecond={pxPerSecond} />

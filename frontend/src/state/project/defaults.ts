@@ -1,5 +1,5 @@
 import { newId } from '../../lib/ids'
-import { PROJECT_VERSION, type Project } from './types'
+import { PROJECT_VERSION, type Project, type TimelineClip } from './types'
 
 export const DEFAULT_VOICE_ID = 'af_heart'
 
@@ -13,7 +13,6 @@ export function createProject(name = 'Untitled short'): Project {
     voiceSpeed: 1,
     voiceover: null,
     mix: { voiceVolume: 1, musicVolume: 0.15, music: null },
-    media: [],
     clips: [],
     captions: {
       enabled: true,
@@ -70,11 +69,34 @@ function withDefaults<T>(defaults: T, value: unknown): T {
   return merged as T
 }
 
+/** Settings a clip gets when it's added: centred crop, muted, normal speed. */
+export const CLIP_DEFAULTS = {
+  inPoint: 0,
+  speed: 1,
+  cropX: 0.5,
+  cropY: 0.5,
+  keepAudio: false,
+  volume: 0.5,
+} as const satisfies Partial<TimelineClip>
+
+function normalizeClip(raw: unknown): TimelineClip | null {
+  if (!isObject(raw) || typeof raw.mediaId !== 'string') return null
+  const clip = withDefaults({ id: newId('c'), start: 0, duration: 1, ...CLIP_DEFAULTS } as TimelineClip, raw)
+  return clip.duration > 0 && clip.speed > 0 ? clip : null
+}
+
 /** Upgrades a project loaded from disk (possibly saved by an older build). */
 export function normalizeProject(raw: unknown): Project {
   if (!isObject(raw) || typeof raw.id !== 'string') {
     throw new Error('This file is not a Shorts Creator project')
   }
   const base = createProject()
-  return withDefaults({ ...base, id: raw.id }, raw)
+  const project = withDefaults({ ...base, id: raw.id }, raw)
+  // Stage 1-3 projects had a per-project media list; media now lives in the shared library.
+  delete (project as Project & { media?: unknown }).media
+  project.clips = (Array.isArray(raw.clips) ? raw.clips : [])
+    .map(normalizeClip)
+    .filter((clip): clip is TimelineClip => clip !== null)
+    .sort((a, b) => a.start - b.start)
+  return project
 }

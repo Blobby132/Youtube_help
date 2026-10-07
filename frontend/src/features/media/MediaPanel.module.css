@@ -35,3 +35,191 @@
 .searchInput::placeholder {
   color: var(--text-faint);
 }
+
+.searchOptions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.orientation {
+  flex: none;
+  width: 160px;
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tile[draggable='true'] {
+  cursor: grab;
+}
+
+.tileThumb {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  background: #000;
+}
+
+.tileThumb img,
+.tileThumb video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tileDuration,
+.tileTag {
+  position: absolute;
+  bottom: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 0.7);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 15px;
+  color: #fff;
+}
+
+.tileDuration {
+  right: 4px;
+}
+
+.tileTag {
+  left: 4px;
+}
+
+.tileProgress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: rgb(0 0 0 / 0.6);
+}
+
+.tileProgress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.tileFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 5px;
+}
+
+.tileRes {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tileAdd {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.tileAdd:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.inLibrary {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  font-size: 9.5px;
+  font-weight: 650;
+  color: var(--success);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.credit,
+.note {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.credit a {
+  color: var(--text-muted);
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+.misses {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
+.misses span {
+  color: var(--text-faint);
+}

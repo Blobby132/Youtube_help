@@ -17,6 +17,7 @@ def settings(tmp_path: Path) -> Settings:
         models_dir=tmp_path / "models",
         pexels_api_key=None,
         data_dir=tmp_path / "data",
+        library_dir=tmp_path / "library",
     )
 
 

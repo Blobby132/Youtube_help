@@ -49,6 +49,12 @@
   background: var(--border-strong);
 }
 
+.center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .status {
   font-family: var(--font-mono);
   font-size: 11px;

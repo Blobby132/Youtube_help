@@ -37,6 +37,13 @@
   background: var(--surface-hover);
 }
 
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .name {
   min-width: 0;
   overflow: hidden;
