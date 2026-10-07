@@ -21,7 +21,7 @@ describe('Generate shot availability', () => {
   })
 
   it('names a workflow problem first, and waits for the backend and the first check', () => {
-    const problem = 'ltx_t2v_api.json can\\'t be used: Duration (seconds) is missing.'
+    const problem = "ltx_t2v_api.json can't be used: Duration (seconds) is missing."
     expect(generateBlocker(status({ reachable: false, workflowProblem: problem }), true)).toBe(problem)
     expect(generateBlocker(status(), false)).toBe('The backend is not running.')
     expect(generateBlocker(null, true)).toBe('Checking ComfyUI…')
