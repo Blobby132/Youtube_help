@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { loadLibrary, useLibrary } from './features/library/libraryStore'
 import { PreviewPlayer } from './features/preview/PreviewPlayer'
 import { StartupOverlay } from './features/projects/StartupOverlay'
 import { Timeline } from './features/timeline/Timeline'
@@ -7,14 +8,22 @@ import { LeftPanel } from './layout/LeftPanel'
 import { RightPanel } from './layout/RightPanel'
 import { startPersistence } from './state/project/persistence'
 import { useProjectStore } from './state/project/store'
+import { useUi } from './state/ui'
 import styles from './App.module.css'
 
 export default function App() {
   const loaded = useProjectStore((s) => s.loaded)
+  const online = useUi((s) => s.backend === 'online')
 
   useEffect(() => {
     void startPersistence()
   }, [])
+
+  // The shared media library: the timeline and preview need it, not just the Media tab.
+  // (Re)loaded whenever the backend comes online.
+  useEffect(() => {
+    if (online && useLibrary.getState().status !== 'loading') void loadLibrary()
+  }, [online])
 
   return (
     <div className={styles.app}>

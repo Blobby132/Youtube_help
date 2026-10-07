@@ -9,13 +9,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.autofill import router as autofill
 from app.captions import router as captions
 from app.core import health, jobs
 from app.core.config import APP_NAME, APP_VERSION, Settings, get_settings
 from app.core.errors import install_error_handlers
 from app.core.logging import setup_logging
 from app.fonts import router as fonts
+from app.library import router as library
 from app.mix import router as mix
+from app.pexels import router as pexels
 from app.projects import router as projects
 from app.pronunciations import router as pronunciations
 from app.voiceover import router as voiceover
@@ -46,6 +49,7 @@ def create_app(*, warm: bool = True) -> FastAPI:
         settings = app.dependency_overrides.get(get_settings, get_settings)()
         settings.projects_dir.mkdir(parents=True, exist_ok=True)
         log.info("%s %s ready. Projects folder: %s", APP_NAME, APP_VERSION, settings.projects_dir)
+        log.info("Media library: %s", settings.library_dir)
         log.info("AI voice runs on: %s", "DirectML (GPU), CPU fallback" if settings.tts_device == "directml" else "CPU")
         if settings.pexels_api_key is None:
             log.info("PEXELS_API_KEY is not set; stock search stays off until you add it to .env")
@@ -70,6 +74,9 @@ def create_app(*, warm: bool = True) -> FastAPI:
     app.include_router(captions.router)
     app.include_router(fonts.router)
     app.include_router(pronunciations.router)
+    app.include_router(library.router)
+    app.include_router(pexels.router)
+    app.include_router(autofill.router)
     return app
 
 

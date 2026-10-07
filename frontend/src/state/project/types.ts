@@ -34,30 +34,29 @@ export interface Mix {
   music: MusicTrack | null
 }
 
-export type MediaKind = 'video' | 'image'
-
-export interface MediaItem {
-  id: string
-  kind: MediaKind
-  name: string
-  source: 'pexels' | 'upload'
-  file: string
-  thumbnail?: string
-  width: number
-  height: number
-  /** Seconds; images have no intrinsic duration. */
-  duration?: number
-  credit?: string
-}
-
-/** A clip on the video track. Clips play back to back in array order. */
+/**
+ * A clip on the video track. Clips sit at their own start time (gaps between them stay
+ * empty) and never overlap. Its media lives in the shared library (see lib/api.ts
+ * LibraryItem), so the same file can be used in many projects.
+ */
 export interface TimelineClip {
   id: string
+  /** Library item id. */
   mediaId: string
-  /** Where playback starts inside the source media. */
-  inPoint: number
+  /** Where the clip starts on the timeline. */
+  start: number
   /** Length on the timeline. */
   duration: number
+  /** Where playback starts inside the source media. */
+  inPoint: number
+  /** Playback speed: 0.5 = half speed. The clip uses duration × speed seconds of its source. */
+  speed: number
+  /** Which part of the picture stays when it's cropped to 9:16: 0 = left/top, 0.5 = centre, 1 = right/bottom. */
+  cropX: number
+  cropY: number
+  /** Clip audio is muted unless this is on; then it plays under the voiceover at `volume`. */
+  keepAudio: boolean
+  volume: number
 }
 
 export interface CaptionWord {
@@ -143,7 +142,6 @@ export interface Project {
   voiceSpeed: number
   voiceover: Voiceover | null
   mix: Mix
-  media: MediaItem[]
   clips: TimelineClip[]
   captions: Captions
   canvas: Canvas
@@ -155,4 +153,6 @@ export interface ProjectSummary {
   name: string
   createdAt: string | null
   updatedAt: string | null
+  /** Number of AI-generated clips on the saved timeline (null if the library couldn't be read). */
+  aiClips?: number | null
 }

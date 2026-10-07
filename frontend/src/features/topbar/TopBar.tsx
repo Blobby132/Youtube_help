@@ -1,10 +1,12 @@
 import { Clapperboard } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { formatDuration } from '../../lib/time'
-import { canRender, projectDuration } from '../../state/project/selectors'
+import { aiClips, canRender, projectDuration } from '../../state/project/selectors'
 import { useProject } from '../../state/project/store'
 import { CANVAS } from '../../state/project/types'
 import { useUi } from '../../state/ui'
+import { AiIndicator } from '../library/AiIndicator'
+import { useLibrary } from '../library/libraryStore'
 import { ProjectMenu } from '../projects/ProjectMenu'
 import styles from './TopBar.module.css'
 
@@ -19,6 +21,9 @@ export function TopBar() {
   const duration = useProject(projectDuration)
   const renderable = useProject(canRender)
   const backend = useUi((s) => s.backend)
+  const clips = useProject((p) => p.clips)
+  const items = useLibrary((s) => s.items)
+  const aiCount = aiClips(clips, items).length
 
   return (
     <header className={styles.bar}>
@@ -33,10 +38,13 @@ export function TopBar() {
         <ProjectMenu />
       </div>
 
-      <p className={styles.status}>
-        {clipCount} {clipCount === 1 ? 'clip' : 'clips'} · {formatDuration(duration)} · {CANVAS.width}×
-        {CANVAS.height}
-      </p>
+      <div className={styles.center}>
+        <p className={styles.status}>
+          {clipCount} {clipCount === 1 ? 'clip' : 'clips'} · {formatDuration(duration)} · {CANVAS.width}×
+          {CANVAS.height}
+        </p>
+        {aiCount > 0 && <AiIndicator count={aiCount} />}
+      </div>
 
       <div className={styles.right}>
         <span

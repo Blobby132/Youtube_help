@@ -236,3 +236,308 @@
 .captionOff {
   opacity: 0.4;
 }
+
+/* Toolbar: actions, the selected clip's settings, and the zoom. */
+.toolDivider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  align-self: center;
+  background: var(--border-strong);
+}
+
+.middle {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+
+.notice {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.inspector {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.inspectorName {
+  overflow: hidden;
+  max-width: 160px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.inspectorField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.inspectorField svg {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.inspectorRange {
+  --track: 3px;
+  --thumb: 11px;
+  width: 84px;
+}
+
+.inspectorSelect {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.audioToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.audioToggle:disabled {
+  opacity: 0.5;
+}
+
+.audioOn {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.audioToggle svg {
+  color: inherit;
+}
+
+/* The video track */
+.videoLane {
+  position: absolute;
+  inset: 0;
+}
+
+.gap {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px dashed color-mix(in srgb, var(--warning) 55%, transparent);
+  border-radius: 6px;
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--warning) 14%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  font-size: 10px;
+  font-weight: 650;
+  color: color-mix(in srgb, var(--warning) 85%, white);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.afterEnd {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgb(0 0 0 / 0.45);
+  border-left: 1px solid var(--border-strong);
+  pointer-events: none;
+}
+
+.afterEnd span {
+  position: absolute;
+  bottom: 2px;
+  left: 6px;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.clip {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  overflow: hidden;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1d1d24;
+  cursor: grab;
+  touch-action: none;
+}
+
+.clip:focus-visible {
+  outline-offset: -2px;
+}
+
+.film {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.clipInfo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 3px 7px;
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.7), transparent 55%, rgb(0 0 0 / 0.55));
+  pointer-events: none;
+}
+
+.clipName {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #fff;
+}
+
+.badge,
+.aiBadge,
+.lowBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 0.65);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  line-height: 14px;
+}
+
+.aiBadge {
+  background: #7c4dff;
+}
+
+.lowBadge {
+  background: color-mix(in srgb, var(--warning) 80%, black);
+  color: #1a1206;
+}
+
+.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.dragging {
+  z-index: 3;
+  cursor: grabbing;
+  opacity: 0.9;
+}
+
+.dropGhost {
+  border: 1px dashed var(--accent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.missing {
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+}
+
+.missing .clipName {
+  color: var(--danger);
+}
+
+.edgeStart,
+.edgeEnd {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.edgeStart {
+  left: 0;
+}
+
+.edgeEnd {
+  right: 0;
+}
+
+.selected .edgeStart,
+.selected .edgeEnd,
+.clip:hover .edgeStart,
+.clip:hover .edgeEnd {
+  background: linear-gradient(to right, transparent 2px, rgb(255 255 255 / 0.85) 2px 5px, transparent 5px);
+  background-size: 100% 40%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.snapLine {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  z-index: 4;
+  width: 0;
+  border-left: 1px solid #fff;
+  pointer-events: none;
+}
+
+.snapLine span {
+  position: absolute;
+  top: -12px;
+  left: 3px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  line-height: 12px;
+  color: #000;
+  white-space: nowrap;
+}

@@ -1,7 +1,8 @@
-"""Background jobs for slow work (AI voiceover, later captions and rendering).
+"""Background jobs for slow work (AI voiceover, captions, downloads and imports).
 
-The frontend starts a job, then polls GET /api/jobs/{id} for progress. Heavy jobs run one
-at a time so two models never compete for memory.
+The frontend starts a job, then polls GET /api/jobs/{id} for progress. Heavy jobs (the AI
+models) run one at a time so two models never compete for memory. Media jobs (downloads,
+imports) have their own workers, so a download doesn't wait for a voiceover to finish.
 """
 
 from __future__ import annotations
@@ -56,19 +57,25 @@ class Job:
             }
 
 
+POOLS = {"heavy": 1, "media": 2}
+
+
 class JobManager:
-    def __init__(self, workers: int = 1) -> None:
-        self._executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="job")
+    def __init__(self, pools: dict[str, int] | None = None) -> None:
+        self._executors = {
+            name: ThreadPoolExecutor(max_workers=workers, thread_name_prefix=f"job-{name}")
+            for name, workers in (pools or POOLS).items()
+        }
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
 
-    def submit(self, kind: str, work: Callable[[Job], Any]) -> Job:
+    def submit(self, kind: str, work: Callable[[Job], Any], pool: str = "heavy") -> Job:
         job = Job(kind)
         with self._lock:
             cutoff = time.time() - _KEEP_SECONDS
             self._jobs = {k: j for k, j in self._jobs.items() if j.created > cutoff or j.status in ("queued", "running")}
             self._jobs[job.id] = job
-        self._executor.submit(self._run, job, work)
+        self._executors[pool].submit(self._run, job, work)
         return job
 
     def get(self, job_id: str) -> Job | None:

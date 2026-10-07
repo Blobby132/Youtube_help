@@ -8,6 +8,7 @@ import { formatRelative } from '../../lib/time'
 import { flushSave, openProject } from '../../state/project/persistence'
 import { useProject } from '../../state/project/store'
 import type { ProjectSummary } from '../../state/project/types'
+import { AiIndicator } from '../library/AiIndicator'
 import styles from './OpenProjectDialog.module.css'
 
 interface OpenProjectDialogProps {
@@ -70,7 +71,10 @@ function ProjectList({ onOpened }: { onOpened: () => void }) {
                 onClick={() => void handleOpen(project.id)}
                 disabled={openingId !== null}
               >
-                <span className={styles.name}>{project.name}</span>
+                <span className={styles.title}>
+                  <span className={styles.name}>{project.name}</span>
+                  {!!project.aiClips && <AiIndicator count={project.aiClips} compact />}
+                </span>
                 <span className={styles.meta}>
                   {project.id === currentId
                     ? 'open now'

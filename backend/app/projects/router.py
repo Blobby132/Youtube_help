@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import FileResponse
 
 from app.core.config import Settings, get_settings
+from app.core.errors import AppError
+from app.library.store import Library
+from app.library.usage import ai_clips
 from app.projects.store import ProjectStore
+
+log = logging.getLogger("shorts.projects")
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -19,8 +25,18 @@ StoreDep = Annotated[ProjectStore, Depends(get_store)]
 
 
 @router.get("")
-def list_projects(store: StoreDep) -> list[dict[str, Any]]:
-    return store.list()
+def list_projects(store: StoreDep, settings: Annotated[Settings, Depends(get_settings)]) -> list[dict[str, Any]]:
+    """Saved projects, newest first, each with the number of AI-generated clips on its timeline
+    (null if the media library can't be read)."""
+    try:
+        items: list[dict[str, Any]] | None = Library(settings.library_dir).list()
+    except AppError as exc:
+        log.warning("Project list without AI flags: %s", exc.message)
+        items = None
+    return [
+        {**summary, "aiClips": None if items is None else len(ai_clips(data, items))}
+        for summary, data in store.list_with_data()
+    ]
 
 
 @router.get("/{project_id}")

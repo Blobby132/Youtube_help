@@ -18,14 +18,15 @@ The app is built in stages. Each stage is tested before the next one starts.
 | 1 | Project setup, full layout, autosaved projects | ✅ done |
 | 2 | Script panel and voiceover (Kokoro AI read, record, upload) | ✅ done |
 | 3 | Captions with faster-whisper and caption preview | ✅ done |
-| 4 | Media tab (Pexels and uploads) and timeline | next |
-| 5 | Canvas & title, Ranking tab | |
+| 4 | Media tab (Pexels and uploads) and timeline | ✅ done |
+| 5 | Canvas & title, Ranking tab | next |
 | 6 | FFmpeg render | |
 
 Working now: the full layout, autosaved projects, the script box, all three ways to make a
-voiceover (AI read, recording, upload) plus background music, and word-timed captions drawn
-in the preview as it plays. Buttons for later stages (Search, Render, …) are shown but
-disabled.
+voiceover (AI read, recording, upload) plus background music, word-timed captions, a media
+library shared by all projects (Pexels search, your own clips and images, Auto-fill), and a
+timeline whose clips, voiceover and captions play together in the preview. Render (stage 6)
+is shown but disabled.
 
 ## Windows setup
 
@@ -182,6 +183,98 @@ Projects save themselves about a second after every change, to
 `projects\<id>\project.json`. Click the project name in the top bar to rename it, start a
 **New project**, or **Open** an earlier one. The app reopens your last project on start.
 
+## Media library
+
+Everything you download or import goes into one **library** that all your projects share, so a
+clip downloaded once can be used in any number of videos. It lives in `library\` in the app
+folder (`LIBRARY_DIR` in `.env` moves it): `library.json` lists the clips, `clips\` holds the
+files and `thumbs\` the thumbnails. Each clip records:
+
+- where it came from: `pexels`, `upload` (your own files) or `ai` (shots the app makes itself,
+  coming with "Generate shot"), and an **AI-generated** flag;
+- its resolution and length. Clips narrower than 1080 pixels are marked **Low res**: they are
+  scaled up to fill the 1080×1920 frame and can look soft (AI clips are often 448×832);
+- for Pexels videos, the video id, its page URL and the photographer, shown as a credit.
+
+Tick or untick **AI-generated** on any library card to change the flag later. **+** puts a
+clip in the first gap on the timeline; you can also drag a card onto the video track. The
+trash button deletes a clip from the library (and from your PC); if a project uses it, the app
+asks first and leaves a gap where it was.
+
+Every way into the library goes through one backend function,
+`Library.add_clip(file, source, metadata)` in `backend/app/library/store.py`. It reads the file
+with ffprobe, converts it to H.264 if the browser can't play it, makes a thumbnail and records
+the source. The coming "Generate shot" button will save ComfyUI results through it too.
+
+### Stock footage (Pexels)
+
+Type a few words under **Stock footage** and press **Search**. Results are portrait videos by
+default; **Any** includes wide ones (listed after the portrait ones), which are cropped to 9:16.
+Hover a result to preview it. **Add** downloads it into the library: the smallest file that
+covers the whole 1080×1920 frame without being scaled up, which means the 1080×1920 file of a
+portrait video (its 4K file looks the same in a 1080p Short and is about four times bigger) and
+the 4K file of a landscape video, so its 9:16 crop stays sharp. It is always at least 1080
+pixels wide when Pexels has such a file.
+
+If the key is missing or Pexels refuses a request, the Media tab shows the reason (no key, key
+rejected, rate limit used up, no connection). Free keys allow 200 requests an hour.
+
+### Your own clips (and ComfyUI)
+
+Drop video clips or images on **Your files**, or click it to choose them (MP4, MOV, WebM,
+MKV, AVI, GIF, JPG, PNG, WebP). Before importing, each file has an **AI-generated** checkbox. It
+is ticked for you when the name looks like a ComfyUI output, such as `LTX_2_5_t2v_00017_.mp4`
+or `ComfyUI_00001_.png` (a 5-digit counter with a trailing underscore), or `AnimateDiff_00003.mp4`
+(Video Combine) with a video-model name in it. Files the browser can't play (HEVC, ProRes, AVI,
+…) are converted to H.264 once, on import; phone videos filmed upright stay upright.
+
+### Auto-fill
+
+**Auto-fill from script** picks search words from each sentence (its nouns, with compounds
+like "airplane window" kept together, using spaCy), finds a portrait Pexels video for each
+sentence and places it on the timeline from the moment that sentence starts. With captions it
+uses their word times; otherwise it spreads the sentences over the voiceover by word count.
+Very short sentences share a clip with their neighbour, a sentence with no match is covered by
+the clip before it, and a clip shorter than its sentence plays slower. It replaces the clips on
+the timeline (after asking); **Undo** brings them back.
+
+## Timeline
+
+- **Video track.** Drop clips from the library anywhere on it. Dropped in a gap, a clip fills
+  the gap (as far as its footage goes); dropped on another clip, it goes before or after it and
+  pushes later clips along just enough to make room.
+- **Move and reorder.** Drag a clip into empty space to move it. Drop it on another clip to swap
+  their order: the clips in between shift over, and the cuts outside that stretch stay where
+  they are.
+- **Trim.** Drag either edge of a clip. A clip can't use more footage than it has.
+- **Snapping.** Edges snap to the start and end of every word and caption, to other clips, to
+  the playhead and to the start and end of the video, so cuts land on the voiceover. A label
+  shows what it snapped to. Hold **Alt** while dragging to place freely.
+- **Length.** The video is as long as the voiceover. Stretches with no clip are hatched on the
+  track (and black in the video); clips past the end of the voiceover are dimmed and left out.
+- **Split** cuts the clip at the playhead, **Delete** (or the Delete key) removes the selected
+  clip, and **Fit to voiceover** closes every gap and ends the last clip with the voiceover. It
+  keeps your cuts: each clip runs until the next one starts, using more of its footage, and
+  plays slower if it runs out. **Undo/Redo** (Ctrl+Z, Ctrl+Shift+Z) cover all clip edits.
+- **9:16 crop.** Every clip fills the 1080×1920 frame and is cropped. Select a clip to set
+  which part stays (left–right for wide clips, top–bottom for tall ones) in the timeline
+  toolbar, or drag the picture in the preview. Images can be any length.
+- **Clip audio** is muted. Select a clip and click **Muted** to keep its sound under the
+  voiceover (useful for sound effects in AI clips), with its own volume. You can also change a
+  clip's speed there.
+- **Preview.** Play shows the clips, voiceover and captions together, kept in step with the
+  voiceover.
+
+### AI disclosure
+
+When a project's timeline contains a clip flagged AI-generated, the top bar says **Contains AI**
+(with the number of clips) and the **Open project** list marks the project. YouTube asks you to
+disclose realistic AI-generated or altered content when you upload; the export (stage 6) will
+remind you. The flag is stored once, on the library clip, so changing it there updates every
+project that uses the clip. The backend answers the same question for any saved project at
+`GET /api/projects/<id>/disclosure` (`app/library/usage.py`, `ai_clips`), which the render will
+use.
+
 ## Installing FFmpeg
 
 `winget install --id Gyan.FFmpeg -e` is the easiest way. To install it by hand instead:
@@ -204,12 +297,16 @@ npm test
 
 runs the backend test suite with pytest (`npm test -- -k projects` passes arguments through).
 It covers the text normalization, phonemes (including the RX 9060 XT sentence), the Kokoro
-engine and its DirectML-to-CPU fallback, voiceover and music uploads, caption alignment, and,
-once the models are downloaded, real speech generation and a Kokoro → Whisper → captions
-round trip. `npm run test:frontend` runs the frontend unit tests (caption grouping, editing,
-layout and the out-of-date check). `npm run test:e2e` drives the real frontend in Chromium
-against a fake backend (on a new machine, first run `npx playwright install chromium` once
-inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
+engine and its DirectML-to-CPU fallback, voiceover and music uploads, caption alignment, the
+media library (imports, conversion, the AI flag, deleting, AI disclosure), Pexels search and
+downloads against a fake Pexels (no key or network needed), Auto-fill, and, once the models
+are downloaded, real speech generation and a Kokoro → Whisper → captions round trip.
+`npm run test:frontend` runs the frontend unit tests (caption grouping and layout, the
+out-of-date check, every timeline edit, snapping, undo, the 9:16 crop, Auto-fill timing and the
+ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
+fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
+splitting, Pexels results and errors, and imports with the AI flag (on a new machine, first
+run `npx playwright install chromium` once inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
 the frontend.
 
@@ -224,11 +321,14 @@ backend/                FastAPI app (Python)
   app/captions/         faster-whisper transcription, script alignment, caption job
   app/fonts/            caption/title fonts (OFL) shared by preview and render
   app/pronunciations/   the app-wide pronunciation list (data/pronunciations.json)
+  app/library/          the shared media library: add_clip, imports, AI disclosure
+  app/pexels/           Pexels search and downloads
+  app/autofill/         search words per sentence and one clip per sentence
   app/mix/              background music
   tests/                pytest suite
 frontend/               React + TypeScript + Vite
   src/components/ui/    shared controls (buttons, tabs, sliders, alerts, ...)
-  src/features/         one folder per feature: script, voiceover, mix, media,
+  src/features/         one folder per feature: script, voiceover, mix, media, library,
                         ranking, captions, canvas, preview, timeline, projects, topbar
   src/layout/           left and right side panels
   src/state/            project document, autosave, editor UI state
@@ -236,6 +336,7 @@ frontend/               React + TypeScript + Vite
   e2e/                  end-to-end tests (Playwright, fake backend)
 scripts/                setup.mjs, dev.mjs, test.mjs (plain Node, no dependencies)
 projects/               your saved projects (not committed)
+library/                the media library shared by all projects (not committed)
 data/                   app-wide data, e.g. the pronunciation list (not committed)
 ```
 
@@ -255,4 +356,11 @@ data/                   app-wide data, e.g. the pronunciation list (not committe
   file's checksum is verified, so a broken download is never used.
 - **The Whisper download failed**: run `npm run setup` again (or click Generate captions). It
   comes from Hugging Face, so that site must be reachable.
-- **Keyboard**: Space plays/pauses the preview (when you aren't typing).
+- **Pexels says the key was rejected**: check `PEXELS_API_KEY` in `.env` (no quotes or spaces)
+  and restart the app; `.env` is read when the app starts.
+- **An imported clip takes a while**: files the browser can't play (HEVC, ProRes, AVI, …) are
+  converted to H.264 on import; the progress bar shows how far along it is.
+- **A clip on the timeline says "Missing clip"**: it was deleted from the library. Delete it
+  from the timeline or drop another clip in its place.
+- **Keyboard**: Space plays/pauses the preview, Delete removes the selected clip, Ctrl+Z and
+  Ctrl+Shift+Z undo and redo clip edits (when you aren't typing).

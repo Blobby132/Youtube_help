@@ -25,3 +25,9 @@ export function formatRelative(iso: string | null | undefined, now = Date.now())
   if (diff < 86400 * 7) return `${Math.round(diff / 86400)} d ago`
   return new Date(iso).toLocaleDateString()
 }
+
+/** Clip lengths: "4.2 s" for short clips, "1:05" for long ones. */
+export function formatClipLength(seconds: number): string {
+  if (seconds < 59.95) return `${seconds.toFixed(1)} s`
+  return formatDuration(seconds)
+}

@@ -7,6 +7,81 @@ import type { Page, Route } from '@playwright/test'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fontFile = readFileSync(path.join(here, '../../backend/app/fonts/files/Montserrat-Black.ttf'))
+// 2 s, 180x320: red for the first second, blue for the second. WebM, because Playwright's
+// Chromium has no H.264.
+const clipFile = readFileSync(path.join(here, 'fixtures/red-then-blue.webm'))
+const thumbFile = readFileSync(path.join(here, 'fixtures/thumb.jpg'))
+
+export const MISSING_KEY =
+  'Stock search needs a free Pexels API key. Get one at https://www.pexels.com/api/, add PEXELS_API_KEY=your-key to the .env file in the app folder, then restart the app.'
+
+export interface FakeLibraryItem {
+  id: string
+  kind: 'video' | 'image'
+  name: string
+  file: string
+  thumbnail: string | null
+  width: number
+  height: number
+  duration: number | null
+  fps: number | null
+  hasAudio: boolean
+  size: number
+  source: 'pexels' | 'upload' | 'ai'
+  aiGenerated: boolean
+  lowRes: boolean
+  originalName: string | null
+  addedAt: string
+  pexels: { videoId: number; url: string; photographer: string; photographerUrl: string | null } | null
+  generation: null
+}
+
+export function libraryItem(id: string, overrides: Partial<FakeLibraryItem> = {}): FakeLibraryItem {
+  return {
+    id,
+    kind: 'video',
+    name: `Clip ${id}`,
+    file: `${id}.webm`,
+    thumbnail: `${id}.jpg`,
+    width: 180,
+    height: 320,
+    duration: 2,
+    fps: 24,
+    hasAudio: false,
+    size: clipFile.length,
+    source: 'upload',
+    aiGenerated: false,
+    lowRes: true,
+    originalName: `${id}.webm`,
+    addedAt: '2026-10-07T00:00:00Z',
+    pexels: null,
+    generation: null,
+    ...overrides,
+  }
+}
+
+export function pexelsResult(id: number, title: string) {
+  return {
+    id,
+    title,
+    url: `https://www.pexels.com/video/${title.toLowerCase().replaceAll(' ', '-')}-${id}/`,
+    duration: 12,
+    width: 1080,
+    height: 1920,
+    image: '/fake-pexels/thumb.jpg',
+    photographer: 'Jane Doe',
+    photographerUrl: 'https://www.pexels.com/@jane',
+    previewUrl: '/fake-pexels/preview.webm',
+    file: { width: 1080, height: 1920, fps: 25, quality: 'hd' },
+    libraryId: null as string | null,
+  }
+}
+
+interface FakeOptions {
+  library?: FakeLibraryItem[]
+  /** null: no API key; otherwise the results every search returns. */
+  pexels?: ReturnType<typeof pexelsResult>[] | null
+}
 
 /** One second of silent 16-bit mono WAV, enough for the waveform to decode. */
 function silentWav(seconds = 1, rate = 8000): Buffer {
@@ -27,6 +102,20 @@ function silentWav(seconds = 1, rate = 8000): Buffer {
   return buffer
 }
 
+/** Serves a file the way the real backend does, honouring Range so video can seek. */
+function serveFile(route: Route, body: Buffer, contentType: string) {
+  const range = /bytes=(\d*)-(\d*)/.exec(route.request().headers()['range'] ?? '')
+  if (!range) return route.fulfill({ status: 200, contentType, body, headers: { 'Accept-Ranges': 'bytes' } })
+  const start = range[1] ? Number(range[1]) : body.length - Number(range[2])
+  const end = range[1] && range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1
+  return route.fulfill({
+    status: 206,
+    contentType,
+    body: body.subarray(start, end + 1),
+    headers: { 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${body.length}` },
+  })
+}
+
 interface Job {
   id: string
   kind: string
@@ -37,9 +126,11 @@ interface Job {
   error: null
 }
 
-export async function fakeBackend(page: Page) {
+export async function fakeBackend(page: Page, options: FakeOptions = {}) {
   const projects = new Map<string, Record<string, unknown>>()
   const jobs = new Map<string, Job>()
+  const library: FakeLibraryItem[] = [...(options.library ?? [])]
+  const pexels = options.pexels === undefined ? [] : options.pexels
   let pronunciations: unknown[] = []
   let counter = 0
 
@@ -50,6 +141,12 @@ export async function fakeBackend(page: Page) {
     jobs.set(job.id, job)
     return job
   }
+
+  await page.route('**/fake-pexels/**', (route) =>
+    route.request().url().endsWith('.jpg')
+      ? route.fulfill({ status: 200, contentType: 'image/jpeg', body: thumbFile })
+      : serveFile(route, clipFile, 'video/webm'),
+  )
 
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -64,7 +161,7 @@ export async function fakeBackend(page: Page) {
         version: 'test',
         python: '3.14',
         ffmpeg: true,
-        pexels: false,
+        pexels: pexels !== null,
         canvas: { width: 1080, height: 1920, fps: 30 },
         tts: { device: 'cpu', directmlAvailable: false, modelReady: true, provider: 'CPU' },
         captions: { model: 'small.en', modelReady: true },
@@ -82,9 +179,63 @@ export async function fakeBackend(page: Page) {
       return json(route, { entries: pronunciations })
     }
     if (parts[0] === 'jobs') return json(route, jobs.get(parts[1]))
+    if (parts[0] === 'library') {
+      if (parts.length === 1) return json(route, library)
+      if (parts[1] === 'import') {
+        // Multipart body: pick out the file name and the AI-generated field.
+        const body = request.postDataBuffer()?.toString('latin1') ?? ''
+        const fileName = /filename="([^"]+)"/.exec(body)?.[1] ?? 'clip.webm'
+        const ai = /name="aiGenerated"\r\n\r\n(true|false)/.exec(body)?.[1] === 'true'
+        const item = libraryItem(`m-import${++counter}`, { name: fileName.replace(/\.[^.]+$/, ''), originalName: fileName, aiGenerated: ai })
+        library.unshift(item)
+        return json(route, finished('import', item))
+      }
+      const item = library.find((i) => i.id === parts[1])
+      if (!item) return json(route, { detail: 'Library item was not found. Was it deleted?' }, 404)
+      if (parts[2] === 'file') return serveFile(route, clipFile, 'video/webm')
+      if (parts[2] === 'thumbnail') return route.fulfill({ status: 200, contentType: 'image/jpeg', body: thumbFile })
+      if (method === 'PATCH') {
+        Object.assign(item, request.postDataJSON())
+        return json(route, item)
+      }
+      if (method === 'DELETE') {
+        library.splice(library.indexOf(item), 1)
+        return json(route, { deleted: item.id, usedIn: [] })
+      }
+    }
+    if (parts[0] === 'pexels') {
+      if (pexels === null) return json(route, { detail: MISSING_KEY }, 400)
+      if (parts[1] === 'search') {
+        return json(route, { page: 1, totalResults: pexels.length, hasMore: false, results: pexels })
+      }
+      const result = pexels.find((r) => r.id === Number(parts[1]))
+      if (parts[2] === 'add' && result) {
+        const item = libraryItem(`m-pexels${result.id}`, {
+          name: result.title,
+          source: 'pexels',
+          width: 1080,
+          height: 1920,
+          lowRes: false,
+          pexels: { videoId: result.id, url: result.url, photographer: result.photographer, photographerUrl: result.photographerUrl },
+        })
+        library.unshift(item)
+        result.libraryId = item.id
+        return json(route, finished('pexels', item))
+      }
+    }
     if (parts[0] === 'projects') {
       if (parts.length === 1) {
-        return json(route, [...projects.values()].map((p) => ({ id: p.id, name: p.name, createdAt: null, updatedAt: null })))
+        const ai = new Set(library.filter((i) => i.aiGenerated).map((i) => i.id))
+        return json(
+          route,
+          [...projects.values()].map((p) => ({
+            id: p.id,
+            name: p.name,
+            createdAt: null,
+            updatedAt: null,
+            aiClips: ((p.clips as { mediaId: string }[]) ?? []).filter((c) => ai.has(c.mediaId)).length,
+          })),
+        )
       }
       const id = parts[1]
       if (parts.length === 2 && method === 'PUT') {
@@ -107,4 +258,6 @@ export async function fakeBackend(page: Page) {
     }
     return json(route, { detail: `fake backend: no route for ${method} ${url.pathname}` }, 404)
   })
+
+  return { library, projects }
 }

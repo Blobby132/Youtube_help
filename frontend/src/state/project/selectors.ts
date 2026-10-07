@@ -1,13 +1,15 @@
-import type { Project } from './types'
+import type { LibraryItem } from '../../lib/api'
+import type { Project, TimelineClip } from './types'
 
-/** Length of the video track (clips play back to back). */
-export function clipsDuration(project: Project): number {
-  return project.clips.reduce((total, clip) => total + clip.duration, 0)
+/** Where the last clip ends. */
+export function clipsEnd(project: Project): number {
+  return project.clips.reduce((end, clip) => Math.max(end, clip.start + clip.duration), 0)
 }
 
-/** Length of the finished video: the longer of the clips and the voiceover. */
+/** Length of the finished video: the voiceover's length (clips past it are cut off). Without a
+ * voiceover, the clips' length, so they can still be previewed. */
 export function projectDuration(project: Project): number {
-  return Math.max(clipsDuration(project), project.voiceover?.duration ?? 0)
+  return project.voiceover ? project.voiceover.duration : clipsEnd(project)
 }
 
 export function canRender(project: Project): boolean {
@@ -21,4 +23,13 @@ export function canRender(project: Project): boolean {
 export function captionsOutOfDate(project: Project): boolean {
   const { captions, voiceover } = project
   return captions.words.length > 0 && voiceover !== null && captions.voiceoverFile !== voiceover.file
+}
+
+/**
+ * Timeline clips whose library item is flagged AI-generated. The top bar shows this now; the
+ * export warning (Stage 6) asks the backend's twin, app/library/usage.py `ai_clips`.
+ */
+export function aiClips(clips: readonly TimelineClip[], items: readonly LibraryItem[]): TimelineClip[] {
+  const ai = new Set(items.filter((item) => item.aiGenerated).map((item) => item.id))
+  return clips.filter((clip) => ai.has(clip.mediaId))
 }

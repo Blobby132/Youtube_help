@@ -29,6 +29,14 @@
   background: #000;
 }
 
+.panX {
+  cursor: ew-resize;
+}
+
+.panY {
+  cursor: ns-resize;
+}
+
 .canvas {
   display: block;
   width: 100%;

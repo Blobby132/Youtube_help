@@ -1,9 +1,10 @@
 """File-based project storage.
 
-Each project lives in its own folder so later features can keep the project's media
-(voiceovers, clips, renders) next to its JSON:
+Each project lives in its own folder, with its own media (voiceovers, music, later renders)
+next to its JSON. Video clips live in the shared media library instead (app/library).
 
     projects/<id>/project.json
+    projects/<id>/media/
 """
 
 from __future__ import annotations
@@ -64,18 +65,23 @@ class ProjectStore:
         return path
 
     def list(self) -> list[dict[str, Any]]:
+        return [summary for summary, _ in self.list_with_data()]
+
+    def list_with_data(self) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+        """Every readable project as (summary, full data), newest first."""
         if not self.root.is_dir():
             return []
-        summaries = []
+        found = []
         for path in self.root.glob(f"*/{PROJECT_FILE}"):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:
                 log.warning("Skipping unreadable project %s: %s", path, exc)
                 continue
-            summaries.append(summarize(path.parent.name, data))
-        summaries.sort(key=lambda s: s["updatedAt"] or "", reverse=True)
-        return summaries
+            if isinstance(data, dict):
+                found.append((summarize(path.parent.name, data), data))
+        found.sort(key=lambda pair: pair[0]["updatedAt"] or "", reverse=True)
+        return found
 
     def load(self, project_id: str) -> dict[str, Any]:
         path = self._project_file(project_id)

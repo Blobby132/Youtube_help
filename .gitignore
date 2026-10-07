@@ -16,7 +16,8 @@ backend/tests/output/
 projects/*
 !projects/.gitkeep
 models/
-data/
+/data/
+/library/
 
 # Editors / OS
 .vscode/
