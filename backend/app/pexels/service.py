@@ -43,3 +43,28 @@ def add_video(pexels: PexelsClient, library: Library, video_id: int, report: Rep
         return library.add_clip(temp, "pexels", metadata)
     finally:
         temp.unlink(missing_ok=True)
+
+
+class PexelsSource:
+    """Pexels for Auto-fill (app.stock.sources.StockSource)."""
+
+    name = "pexels"
+    label = "Pexels"
+    results_per_search = 15
+
+    def __init__(self, client: PexelsClient) -> None:
+        self.client = client
+
+    @property
+    def has_key(self) -> bool:
+        return bool(self.client.api_key)
+
+    def require_key(self) -> None:
+        self.client.require_key()
+
+    def candidates(self, query: str) -> list[int]:
+        videos = self.client.search(query, per_page=self.results_per_search).get("videos") or []
+        return [v["id"] for v in videos if isinstance(v, dict) and isinstance(v.get("id"), int) and best_file(v)]
+
+    def add(self, library: Library, video_id: int, report: Report, tag: str) -> dict[str, Any]:
+        return add_video(self.client, library, video_id, report, tag)

@@ -9,7 +9,7 @@ import { addToList, useLibrary } from '../library/libraryStore'
 import { fitToVoiceover, newClip } from '../timeline/clipOps'
 import { editClips, showNotice, sourceLengths } from '../timeline/timelineEdits'
 import { planSegments } from './autofillPlan'
-import { markInLibrary } from './pexelsStore'
+import { currentSource, markInLibrary } from './stockStore'
 
 interface AutofillState {
   task: { progress: number; message: string } | null
@@ -30,11 +30,17 @@ export async function runAutofill() {
 
   useAutofill.setState({ task: { progress: 0, message: 'Starting…' }, error: null, summary: null, misses: [] })
   try {
-    const job = await api.startAutofill(segments.map((s) => s.text))
+    const job = await api.startAutofill(
+      segments.map((s) => s.text),
+      currentSource(),
+    )
     const result = await waitForJob(job, (update) => useAutofill.setState({ task: { progress: update.progress, message: update.message } }))
     const items = result.sentences.flatMap((s) => (s.item ? [s.item] : []))
     addToList(items)
-    for (const item of items) if (item.pexels) markInLibrary(item.pexels.videoId, item.id)
+    for (const item of items) {
+      if (item.pexels) markInLibrary('pexels', item.pexels.videoId, item.id)
+      if (item.pixabay) markInLibrary('pixabay', item.pixabay.videoId, item.id)
+    }
     if (useProjectStore.getState().project.id !== project.id) {
       useAutofill.setState({ task: null, summary: 'The clips are in the library; another project was opened, so the timeline was left alone.' })
       return

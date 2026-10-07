@@ -16,13 +16,13 @@ from typing import Any
 import httpx
 
 from app.core.errors import AppError
+from app.stock.files import DOWNLOAD_TIMEOUT, choose_file, download_file, orientation_of
+from app.stock.files import preview_file as shared_preview_file
 
 log = logging.getLogger("shorts.pexels")
 
 API_URL = "https://api.pexels.com"
 TIMEOUT = httpx.Timeout(20.0, connect=10.0)
-DOWNLOAD_TIMEOUT = httpx.Timeout(60.0, connect=15.0)
-FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
 
 MISSING_KEY = (
     "Stock search needs a free Pexels API key. Get one at https://www.pexels.com/api/, add "
@@ -72,30 +72,7 @@ class PexelsClient:
 
     def download(self, url: str, target: Path, on_progress: Callable[[float], None] | None = None) -> None:
         """Streams a video file to `target`, reporting progress (0..1) when the size is known."""
-        try:
-            with self._client(DOWNLOAD_TIMEOUT) as client, client.stream("GET", url) as response:
-                if response.status_code >= 400:
-                    raise AppError(f"Pexels refused the download (HTTP {response.status_code}). Try again later.", 502)
-                total = int(response.headers.get("content-length") or 0)
-                done = 0
-                with target.open("wb") as out:
-                    for chunk in response.iter_bytes(1 << 20):
-                        out.write(chunk)
-                        done += len(chunk)
-                        if on_progress and total:
-                            on_progress(min(1.0, done / total))
-        except httpx.TimeoutException as exc:
-            target.unlink(missing_ok=True)
-            raise AppError("The download from Pexels stalled. Check your internet connection and try again.", 504) from exc
-        except httpx.HTTPError as exc:
-            target.unlink(missing_ok=True)
-            raise AppError(f"The download from Pexels failed ({exc}). Try again.", 502) from exc
-        except BaseException:
-            target.unlink(missing_ok=True)
-            raise
-        if done == 0:
-            target.unlink(missing_ok=True)
-            raise AppError("Pexels sent an empty file. Try again later.", 502)
+        download_file(self._client(DOWNLOAD_TIMEOUT), url, target, "Pexels", on_progress)
 
 
 def check_response(response: httpx.Response) -> None:
@@ -126,10 +103,6 @@ def check_response(response: httpx.Response) -> None:
     raise AppError(f"Pexels answered HTTP {status}{': ' + detail if detail else ''}. Try again in a moment.", 502)
 
 
-def _area(file: dict[str, Any]) -> int:
-    return int(file["width"]) * int(file["height"])
-
-
 def usable_files(video: dict[str, Any]) -> list[dict[str, Any]]:
     files = [
         f
@@ -141,35 +114,13 @@ def usable_files(video: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def best_file(video: dict[str, Any]) -> dict[str, Any] | None:
-    """The file to download for a 1080×1920 video.
-
-    Prefers files at least 1080 pixels wide. Among those, the smallest one that covers the whole
-    1080×1920 frame without being scaled up: the 1080×1920 file of a portrait video (its 4K
-    version looks the same in a 1080p Short at four times the download), and the 4K file of a
-    landscape video, since cropping it to 9:16 keeps only a third of its width. When no file
-    covers the frame, the largest one.
-    """
-    files = usable_files(video)
-    if not files:
-        return None
-
-    def tie_break(f: dict[str, Any]) -> tuple[float, int]:
-        return (abs((f.get("fps") or 30) - 30), f.get("size") or 0)
-
-    covering = [f for f in files if f["width"] >= FRAME_WIDTH and f["height"] >= FRAME_HEIGHT]
-    if covering:
-        return min(covering, key=lambda f: (_area(f), *tie_break(f)))
-    wide = [f for f in files if f["width"] >= FRAME_WIDTH] or files
-    return max(wide, key=lambda f: (_area(f), *(-x for x in tie_break(f))))
+    """The file to download (see app.stock.files.choose_file); among equal sizes, the one
+    closest to 30 fps, then the smaller one."""
+    return choose_file(usable_files(video), lambda f: (abs((f.get("fps") or 30) - 30), f.get("size") or 0))
 
 
 def preview_file(video: dict[str, Any]) -> dict[str, Any] | None:
-    """A small file for the hover preview: the smallest at least 360 pixels on its short side."""
-    files = usable_files(video)
-    if not files:
-        return None
-    big_enough = [f for f in files if min(f["width"], f["height"]) >= 360] or files
-    return min(big_enough, key=_area)
+    return shared_preview_file(usable_files(video))
 
 
 _SLUG = re.compile(r"/video/(?:(?P<slug>[^/]*[^/\d-][^/]*?)-)?(?P<id>\d+)/?$")
@@ -190,15 +141,17 @@ def summarize_video(video: dict[str, Any], in_library: dict[int, str]) -> dict[s
         return None
     user = video.get("user") or {}
     return {
+        "source": "pexels",
         "id": video["id"],
         "title": title_from_url(video.get("url", ""), video["id"]),
         "url": video.get("url"),
         "duration": video.get("duration"),
         "width": video.get("width"),
         "height": video.get("height"),
+        "orientation": orientation_of(video.get("width"), video.get("height")),
         "image": video.get("image"),
-        "photographer": user.get("name") or "Unknown",
-        "photographerUrl": user.get("url"),
+        "author": user.get("name") or "Unknown",
+        "authorUrl": user.get("url"),
         "previewUrl": preview["link"] if preview else None,
         "file": {"width": best["width"], "height": best["height"], "fps": best.get("fps"), "quality": best.get("quality")},
         "libraryId": in_library.get(video["id"]),
@@ -210,10 +163,10 @@ def summarize_search(data: dict[str, Any], in_library: dict[int, str], portrait_
     results = [r for r in (summarize_video(v, in_library) for v in videos) if r]
     if portrait_first:
         # Stable sort: keeps Pexels' relevance order within portrait and within the rest.
-        results.sort(key=lambda r: not ((r["height"] or 0) > (r["width"] or 0)))
+        results.sort(key=lambda r: r["orientation"] != "portrait")
     return {
+        "source": "pexels",
         "page": data.get("page", 1),
-        "perPage": data.get("per_page"),
         "totalResults": data.get("total_results", len(results)),
         "hasMore": bool(data.get("next_page")),
         "results": results,

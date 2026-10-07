@@ -7,11 +7,15 @@ import { useProject } from '../../state/project/store'
 import { useUi } from '../../state/ui'
 import styles from './MediaPanel.module.css'
 import { runAutofill, useAutofill } from './autofillTasks'
+import { availableSources, SOURCE_LABEL } from './stockSources'
+import { useCurrentSource } from './stockStore'
 
 export function AutofillSection() {
   const hasScript = useProject((p) => p.script.trim().length > 0)
   const hasVoiceover = useProject((p) => p.voiceover !== null)
-  const pexelsReady = useUi((s) => s.health?.pexels)
+  const health = useUi((s) => s.health)
+  const noSource = health !== null && availableSources(health).length === 0
+  const source = useCurrentSource()
   const online = useUi((s) => s.backend === 'online')
   const { task, error, summary, misses } = useAutofill()
 
@@ -22,8 +26,8 @@ export function AutofillSection() {
         icon={WandSparkles}
         accentIcon
         loading={!!task}
-        disabled={!hasScript || !online || pexelsReady === false}
-        title={!hasScript ? 'Write a script first' : pexelsReady === false ? 'Needs a Pexels API key' : undefined}
+        disabled={!hasScript || !online || noSource}
+        title={!hasScript ? 'Write a script first' : noSource ? 'Needs a Pixabay or Pexels API key in .env' : `Uses ${SOURCE_LABEL[source]}`}
         onClick={() => void runAutofill()}
       >
         Auto-fill from script
@@ -51,6 +55,7 @@ export function AutofillSection() {
           </ul>
         </InlineAlert>
       )}
+      {!noSource && !task && <p className={styles.note}>Clips come from {SOURCE_LABEL[source]}.</p>}
       {!hasVoiceover && hasScript && !task && (
         <p className={styles.note}>Without a voiceover, clip lengths are estimated from the script.</p>
       )}

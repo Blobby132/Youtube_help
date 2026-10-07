@@ -24,6 +24,8 @@ interface UiState {
   /** Timeline zoom, 0 (whole video) to 1 (close up). */
   zoom: number
   selectedClipId: string | null
+  /** True when the clip settings fit beside the preview; otherwise they go in the timeline toolbar. */
+  clipSettingsInPreview: boolean
 }
 
 export const useUi = create<UiState>()(() => ({
@@ -40,6 +42,7 @@ export const useUi = create<UiState>()(() => ({
   muted: false,
   zoom: 0.45,
   selectedClipId: null,
+  clipSettingsInPreview: false,
 }))
 
 export const setUi = useUi.setState

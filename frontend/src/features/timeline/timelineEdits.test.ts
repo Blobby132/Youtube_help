@@ -24,6 +24,7 @@ const item = (id: string, duration: number | null, aiGenerated = false): Library
   originalName: null,
   addedAt: '',
   pexels: null,
+  pixabay: null,
   generation: null,
 })
 

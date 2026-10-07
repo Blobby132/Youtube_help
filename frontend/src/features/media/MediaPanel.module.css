@@ -43,9 +43,34 @@
   gap: 8px;
 }
 
-.orientation {
-  flex: none;
-  width: 160px;
+.sourceRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rowLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sourceSwitch {
+  flex: 1;
+}
+
+.countdown {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-weight: 700;
+}
+
+.tagPortrait {
+  background: color-mix(in srgb, var(--accent) 80%, black);
 }
 
 .count {
