@@ -39,6 +39,9 @@ class Settings:
     library_dir: Path = REPO_ROOT / "library"
     # Free key from https://pixabay.com/api/docs/ for Pixabay stock video search.
     pixabay_api_key: str | None = None
+    # ComfyUI for "Generate shot": its address, and the workflow exported in API format.
+    comfyui_url: str = "http://127.0.0.1:8188"
+    comfy_workflow: Path = REPO_ROOT / "comfy" / "ltx_t2v_api.json"
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -62,4 +65,6 @@ def get_settings() -> Settings:
         data_dir=_path_from_env("DATA_DIR", REPO_ROOT / "data"),
         library_dir=_path_from_env("LIBRARY_DIR", REPO_ROOT / "library"),
         pixabay_api_key=pixabay_key or None,
+        comfyui_url=(os.getenv("COMFYUI_URL") or "").strip() or "http://127.0.0.1:8188",
+        comfy_workflow=_path_from_env("COMFYUI_WORKFLOW", REPO_ROOT / "comfy" / "ltx_t2v_api.json"),
     )

@@ -40,7 +40,7 @@ export interface FakeLibraryItem {
   addedAt: string
   pexels: { videoId: number; url: string; photographer: string; photographerUrl: string | null } | null
   pixabay: { videoId: number; url: string; uploader: string; uploaderUrl: string | null } | null
-  generation: null
+  generation: Record<string, unknown> | null
 }
 
 export function libraryItem(id: string, overrides: Partial<FakeLibraryItem> = {}): FakeLibraryItem {
@@ -92,11 +92,61 @@ export const pexelsResult = (id: number, title: string) => stockResult('pexels',
 
 type Result = ReturnType<typeof stockResult>
 
+export interface FakeShot {
+  id: string
+  batch: string
+  variation: number
+  variations: number
+  prompt: string
+  seed: number
+  quality: 'draft' | 'final'
+  megapixels: number
+  duration: number
+  fps: number
+  workflow: string
+  basedOn: string | null
+  status: 'queued' | 'running' | 'saving' | 'done' | 'error' | 'cancelled'
+  queuePosition: number | null
+  progress: number
+  message: string
+  itemId: string | null
+  error: string | null
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+/** An AI shot in the library, as Generate shot saves it. */
+export function aiShotItem(id: string, prompt: string, quality: 'draft' | 'final' = 'draft', seed = 1234) {
+  return libraryItem(id, {
+    name: prompt.slice(0, 40),
+    source: 'ai',
+    aiGenerated: true,
+    width: 480,
+    height: 864,
+    hasAudio: true,
+    generation: {
+      prompt,
+      seed,
+      quality,
+      megapixels: quality === 'draft' ? 0.4 : 0.8,
+      resolution: quality === 'draft' ? '480x864' : '672x1200',
+      duration: 3,
+      fps: 24,
+      workflow: 'ltx_t2v_api.json',
+      basedOn: null,
+      generatedAt: '2026-10-07T00:00:00Z',
+    },
+  })
+}
+
 interface FakeOptions {
   library?: FakeLibraryItem[]
   /** For each source, null (or left out): no API key; otherwise the videos searches find. */
   pexels?: Result[] | null
   pixabay?: Result[] | null
+  /** Whether the fake ComfyUI answers (default: yes). */
+  comfy?: boolean
 }
 
 /** One second of silent 16-bit mono WAV, enough for the waveform to decode. */
@@ -150,6 +200,10 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
   /** Searches allowed before the fake Pixabay says the rate limit is used up (null: no limit). */
   const limits: Record<Source, number | null> = { pexels: null, pixabay: null }
   const searched: { source: Source; query: string; orientation: string }[] = []
+  const comfy = { reachable: options.comfy ?? true }
+  const shots: FakeShot[] = []
+  const shotRequests: Record<string, unknown>[] = []
+  let seedCounter = 1000
   let pronunciations: unknown[] = []
   let counter = 0
 
@@ -199,6 +253,67 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
       return json(route, { entries: pronunciations })
     }
     if (parts[0] === 'jobs') return json(route, jobs.get(parts[1]))
+    if (parts[0] === 'comfy') {
+      if (parts[1] === 'status') {
+        return json(route, {
+          reachable: comfy.reachable,
+          url: 'http://127.0.0.1:8188',
+          version: comfy.reachable ? '0.9.0' : null,
+          device: comfy.reachable ? 'AMD Radeon RX 9060 XT' : null,
+          error: comfy.reachable ? null : "ComfyUI isn't answering at http://127.0.0.1:8188. Open ComfyUI Desktop and wait until it has finished starting, then try again.",
+          workflow: 'ltx_t2v_api.json',
+          workflowProblem: null,
+        })
+      }
+      if (parts[1] === 'shots' && parts.length === 2 && method === 'GET') return json(route, { jobs: [...shots].reverse() })
+      if (parts[1] === 'shots' && parts.length === 2 && method === 'POST') {
+        const body = request.postDataJSON() as { prompt: string; duration: number; quality: 'draft' | 'final'; variations: number; seed?: number; basedOn?: string }
+        shotRequests.push(body)
+        const batch = `b-${++counter}`
+        const made: FakeShot[] = []
+        for (let variation = 1; variation <= body.variations; variation++) {
+          const shot: FakeShot = {
+            id: `g-${++counter}`,
+            batch,
+            variation,
+            variations: body.variations,
+            prompt: body.prompt,
+            seed: body.seed ?? ++seedCounter,
+            quality: body.quality,
+            megapixels: body.quality === 'draft' ? 0.4 : 0.8,
+            duration: body.duration,
+            fps: 24,
+            workflow: 'ltx_t2v_api.json',
+            basedOn: body.basedOn ?? null,
+            status: 'queued',
+            queuePosition: shots.filter((s) => s.status === 'queued' || s.status === 'running').length,
+            progress: 0,
+            message: "Waiting in ComfyUI's queue…",
+            itemId: null,
+            error: null,
+            createdAt: new Date(Date.now() + counter).toISOString(),
+            startedAt: null,
+            finishedAt: null,
+          }
+          shots.push(shot)
+          made.push(shot)
+        }
+        return json(route, { jobs: made })
+      }
+      if (parts[1] === 'shots' && parts[2] === 'clear') {
+        for (let i = shots.length - 1; i >= 0; i--) if (['done', 'error', 'cancelled'].includes(shots[i].status)) shots.splice(i, 1)
+        return json(route, { jobs: [...shots].reverse() })
+      }
+      const shot = shots.find((s) => s.id === parts[2])
+      if (shot && parts[3] === 'cancel') {
+        Object.assign(shot, { status: 'cancelled', message: '', queuePosition: null })
+        return json(route, shot)
+      }
+      if (shot && method === 'DELETE') {
+        shots.splice(shots.indexOf(shot), 1)
+        return json(route, { deleted: shot.id })
+      }
+    }
     if (parts[0] === 'library') {
       if (parts.length === 1) return json(route, library)
       if (parts[1] === 'import') {
@@ -293,5 +408,24 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
     return json(route, { detail: `fake backend: no route for ${method} ${url.pathname}` }, 404)
   })
 
-  return { library, projects, searched, limits }
+  /** Moves a shot along, as the real backend would while ComfyUI works on it. */
+  const runShot = (index: number, change: 'running' | 'done' | 'error') => {
+    const shot = shots[index]
+    if (change === 'running') {
+      Object.assign(shot, { status: 'running', queuePosition: 0, progress: 0.4, message: 'Generating, pass 1 of 2 (step 5 of 8)…', startedAt: new Date().toISOString() })
+    } else if (change === 'error') {
+      Object.assign(shot, { status: 'error', error: 'ComfyUI failed in SamplerCustomAdvanced (405:344): CUDA out of memory', message: '', queuePosition: null })
+    } else {
+      const item = aiShotItem(`m-${shot.id}`, shot.prompt, shot.quality, shot.seed)
+      library.unshift(item)
+      Object.assign(shot, { status: 'done', progress: 1, itemId: item.id, message: '', queuePosition: null })
+    }
+    let ahead = 0
+    for (const other of shots) {
+      if (other.status === 'queued') other.queuePosition = ahead + (shots.some((s) => s.status === 'running') ? 1 : 0)
+      if (other.status === 'queued') ahead++
+    }
+  }
+
+  return { library, projects, searched, limits, comfy, shots, shotRequests, runShot }
 }

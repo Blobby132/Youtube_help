@@ -251,6 +251,58 @@ or `ComfyUI_00001_.png` (a 5-digit counter with a trailing underscore), or `Anim
 (Video Combine) with a video-model name in it. Files the browser can't play (HEVC, ProRes, AVI,
 …) are converted to H.264 once, on import; phone videos filmed upright stay upright.
 
+### Generate shot (AI clips with ComfyUI)
+
+**Generate shot** in the Media tab makes video clips from a prompt with LTX-2.5 in
+[ComfyUI](https://www.comfy.org/) on your PC, and saves them into the library. The app talks to
+ComfyUI from the backend; the browser never does.
+
+1. Open ComfyUI Desktop and leave it running. The Media tab shows **ComfyUI connected** (or
+   explains that ComfyUI needs to be open; the button stays disabled until it is).
+2. If ComfyUI isn't on `http://127.0.0.1:8188`, set its address in `.env`, e.g.
+   `COMFYUI_URL=http://127.0.0.1:8000` (ComfyUI Desktop uses port 8000 unless you change it;
+   the Media tab says so when it finds ComfyUI there instead).
+3. Click **Generate shot**, describe the shot, and pick its length (2 to 5 seconds), quality
+   (**Draft**: 0.4 megapixels, about 480×864; **Final**: 0.8 megapixels, about 672×1200) and how
+   many **variations** (1 to 4, each with its own random seed). Shots are always 9:16 at 24 fps.
+
+Each clip takes about 3 to 5 minutes. The variations go into ComfyUI's queue and the **Shots**
+list shows each one's place in the queue, its progress (which sampling pass and step) and the
+time it has been running. **Cancel** removes a waiting shot from ComfyUI's queue or stops the
+running one. The list lives in the backend (`data\generations.json`), so reloading the page,
+or even restarting the app while ComfyUI keeps working, loses nothing.
+
+A finished shot is downloaded from ComfyUI and added to the library (not the timeline, since
+you'll usually pick one of several variations), marked AI-generated, with LTX's generated
+sound kept in the file (clip audio is muted on the timeline unless you turn it on). Its library
+card shows the prompt, with:
+
+- **Copy prompt**;
+- **Generate again**: the same prompt and settings with a new seed;
+- **Final quality** (on Draft clips): the same prompt and seed at 0.8 megapixels. The result
+  won't match the draft exactly, because a different resolution changes the video even with
+  the same seed.
+
+The clip also stores its seed, quality, resolution, length and the workflow file it came from.
+
+**The workflow.** `comfy\ltx_t2v_api.json` is the LTX-2.5 text-to-video workflow exported
+from ComfyUI with *Workflow → Export (API)*. The app changes only these inputs, listed in one
+place (`backend/app/comfy/workflow.py`):
+
+| Setting | Node (found by type and title) |
+| --- | --- |
+| Prompt | the *Prompt* text node (`PrimitiveStringMultiline`) |
+| Seed | the `RandomNoise` of the first sampling pass (the one starting from the empty latent); the refine pass keeps its own seed |
+| Quality | `ResolutionSelector`: megapixels 0.4 or 0.8, aspect ratio 9:16 |
+| Length | the *Duration* number (seconds); the workflow turns it into frames |
+| Frame rate | the *Frame Rate* number, always 24 |
+| Result | the `Save Video` node |
+
+To use a changed workflow, export it the same way over `comfy\ltx_t2v_api.json` (or point
+`COMFYUI_WORKFLOW` in `.env` at another file). If one of those inputs can't be found, the Media
+tab names what's missing; if ComfyUI rejects the workflow (for example a model file that isn't
+installed), it shows ComfyUI's reason.
+
 ### Auto-fill
 
 **Auto-fill from script** picks search words from each sentence (its nouns, with compounds
@@ -326,13 +378,18 @@ engine and its DirectML-to-CPU fallback, voiceover and music uploads, caption al
 media library (imports, conversion, the AI flag, deleting, AI disclosure), Pexels and Pixabay
 search and downloads against fake APIs (no keys or network needed), including Pixabay's 24-hour
 cache, rate limit and orientation filter, Auto-fill and which source it uses, and, once the models
-are downloaded, real speech generation and a Kokoro → Whisper → captions round trip.
+are downloaded, real speech generation and a Kokoro → Whisper → captions round trip. Generate
+shot is tested against a fake ComfyUI server (its HTTP and websocket API): the workflow mapping
+on the real `comfy\ltx_t2v_api.json`, submitting variations, queue positions, live progress,
+saving finished shots to the library, failures, cancelling, a lost job, an unreachable ComfyUI
+and picking up jobs again after a restart.
 `npm run test:frontend` runs the frontend unit tests (caption grouping and layout, the
 out-of-date check, every timeline edit, snapping, undo, the 9:16 crop, Auto-fill timing and the
 ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
 fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
 splitting, the crop control, Pexels and Pixabay results, the source switch, the rate-limit
-countdown, and imports with the AI flag (on a new machine, first
+countdown, imports with the AI flag, and Generate shot (the dialog, the jobs list across a
+reload, cancelling, and an AI clip's Copy prompt, Generate again and Final quality) (on a new machine, first
 run `npx playwright install chromium` once inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
 the frontend.
@@ -351,18 +408,20 @@ backend/                FastAPI app (Python)
   app/library/          the shared media library: add_clip, imports, AI disclosure
   app/pexels/           Pexels search and downloads
   app/pixabay/          Pixabay search (24-hour cache, rate limit) and downloads
+  app/comfy/            Generate shot: the ComfyUI workflow mapping, client and jobs
   app/stock/            what both share: the file choice, orientation, downloads
   app/autofill/         search words per sentence and one clip per sentence
   app/mix/              background music
   tests/                pytest suite
 frontend/               React + TypeScript + Vite
   src/components/ui/    shared controls (buttons, tabs, sliders, alerts, ...)
-  src/features/         one folder per feature: script, voiceover, mix, media, library,
+  src/features/         one folder per feature: script, voiceover, mix, media, library, generate,
                         ranking, captions, canvas, preview, timeline, projects, topbar
   src/layout/           left and right side panels
   src/state/            project document, autosave, editor UI state
   src/styles/global.css design tokens; change --accent to re-theme the app
   e2e/                  end-to-end tests (Playwright, fake backend)
+comfy/                  the ComfyUI workflow for Generate shot (API format)
 scripts/                setup.mjs, dev.mjs, test.mjs (plain Node, no dependencies)
 projects/               your saved projects (not committed)
 library/                the media library shared by all projects (not committed)
@@ -370,6 +429,10 @@ data/                   app-wide data, e.g. the pronunciation list (not committe
 ```
 
 ## Troubleshooting
+
+- **"ComfyUI isn't running"** while it is: check the address ComfyUI shows (ComfyUI Desktop:
+  Settings → Server Config, port 8000 by default) and set `COMFYUI_URL` in `.env` to match,
+  then restart the app.
 
 - **"Python 3.12 or newer was not found"**: install Python (above), open a new terminal,
   run `npm run setup` again.

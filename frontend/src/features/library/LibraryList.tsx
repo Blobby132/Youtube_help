@@ -5,6 +5,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { InlineAlert } from '../../components/ui/InlineAlert'
 import { libraryFileUrl, libraryThumbnailUrl, type LibraryItem, type MediaSource } from '../../lib/api'
 import { formatClipLength } from '../../lib/time'
+import { AiShotDetails } from '../generate/AiShotDetails'
 import { useProject } from '../../state/project/store'
 import { addToTimeline } from '../timeline/timelineEdits'
 import { endMediaDrag, startMediaDrag } from './dragMedia'
@@ -87,6 +88,7 @@ function LibraryCard({ item, onTimeline }: { item: LibraryItem; onTimeline: bool
             by {item.pexels.photographer} on Pexels
           </a>
         )}
+        {item.generation?.prompt && <AiShotDetails item={item} />}
         {item.pixabay && (
           <a className={styles.creditLink} href={item.pixabay.url} target="_blank" rel="noreferrer">
             by {item.pixabay.uploader} on Pixabay

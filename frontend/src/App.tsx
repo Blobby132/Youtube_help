@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { startShotPolling } from './features/generate/generateStore'
 import { loadLibrary, useLibrary } from './features/library/libraryStore'
 import { PreviewPlayer } from './features/preview/PreviewPlayer'
 import { StartupOverlay } from './features/projects/StartupOverlay'
@@ -23,6 +24,8 @@ export default function App() {
   // (Re)loaded whenever the backend comes online.
   useEffect(() => {
     if (online && useLibrary.getState().status !== 'loading') void loadLibrary()
+    // Shots ComfyUI is making keep going in the backend; follow them from any tab.
+    if (online) startShotPolling()
   }, [online])
 
   return (
