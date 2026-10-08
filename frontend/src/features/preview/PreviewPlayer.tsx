@@ -1,6 +1,6 @@
-import { Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { Move, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Range } from '../../components/ui/Slider'
 import { formatTimecode } from '../../lib/time'
 import { projectDuration } from '../../state/project/selectors'
@@ -8,6 +8,7 @@ import { useProject } from '../../state/project/store'
 import { CANVAS } from '../../state/project/types'
 import { setUi, useUi } from '../../state/ui'
 import { useLibrary } from '../library/libraryStore'
+import { ClipSettings } from '../timeline/ClipSettings'
 import { clipAt } from '../timeline/clipOps'
 import { updateClip } from '../timeline/timelineEdits'
 import { cropAxis } from './cover'
@@ -15,6 +16,8 @@ import { playback } from './playback'
 import styles from './PreviewPlayer.module.css'
 import { usePlaybackSync } from './usePlaybackSync'
 import { usePreviewRenderer } from './usePreviewRenderer'
+
+const CLIP_CARD_MIN_WIDTH = 160
 
 export function PreviewPlayer() {
   const duration = useProject(projectDuration)
@@ -27,8 +30,31 @@ export function PreviewPlayer() {
   const canPlay = duration > 0
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const panRef = useRef<{ id: string; axis: 'x' | 'y'; from: number; origin: number; travel: number } | null>(null)
+  const centerRef = useRef<HTMLElement>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+  const [cardWidth, setCardWidth] = useState(0)
   usePlaybackSync()
   usePreviewRenderer(canvasRef)
+
+  // The clip settings card sits in the space beside the 9:16 frame when it's wide enough;
+  // otherwise the timeline toolbar shows the settings.
+  useEffect(() => {
+    const center = centerRef.current
+    const frame = frameRef.current
+    if (!center || !frame) return
+    const measure = () => {
+      const side = (center.clientWidth - frame.offsetWidth) / 2
+      const width = Math.min(250, Math.floor(side - 24))
+      const fits = width >= CLIP_CARD_MIN_WIDTH
+      setCardWidth(fits ? width : 0)
+      if (useUi.getState().clipSettingsInPreview !== fits) setUi({ clipSettingsInPreview: fits })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(center)
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [])
 
   const active = useProject((p) => clipAt(p.clips, playhead))
   const item = useLibrary((s) => (active ? s.items.find((i) => i.id === active.mediaId) : undefined))
@@ -70,9 +96,15 @@ export function PreviewPlayer() {
   }
 
   return (
-    <section className={styles.center} aria-label="Preview">
+    <section ref={centerRef} className={styles.center} aria-label="Preview">
+      {hasClips && cardWidth > 0 && (
+        <div className={styles.settingsSlot} style={{ width: cardWidth }}>
+          <ClipSettings variant="card" />
+        </div>
+      )}
       <div className={styles.stage}>
         <div
+          ref={frameRef}
           className={`${styles.frame} ${axis ? (axis === 'x' ? styles.panX : styles.panY) : ''}`}
           onPointerDown={startPan}
           onPointerMove={movePan}
@@ -94,6 +126,11 @@ export function PreviewPlayer() {
           )}
           {!hasClips && hasVoiceover && <p className={styles.hint}>No clips yet: add some from the Media tab</p>}
           {inGap && <p className={styles.hint}>No clip here: this part of the video is black</p>}
+          {axis && (
+            <p className={styles.panHint} aria-hidden>
+              <Move size={11} /> Drag to move the crop
+            </p>
+          )}
           {active && !item && libraryReady && (
             <p className={styles.hint}>This clip was deleted from the library</p>
           )}

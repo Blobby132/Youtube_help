@@ -4,10 +4,13 @@ import type { CaptionWord, MusicTrack, Project, ProjectSummary, Voiceover } from
 
 export class ApiError extends Error {
   readonly status: number
-  constructor(message: string, status: number) {
+  /** Seconds until a rate limit resets (sent by the backend with HTTP 429). */
+  readonly retryAfter: number | null
+  constructor(message: string, status: number, retryAfter: number | null = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.retryAfter = retryAfter
   }
 }
 
@@ -20,15 +23,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`
+    let retryAfter: number | null = null
     try {
       const body = await response.json()
       if (typeof body?.detail === 'string') message = body.detail
       else if (body?.detail) message = JSON.stringify(body.detail)
+      if (typeof body?.retryAfter === 'number') retryAfter = body.retryAfter
     } catch {
       // Vite answers 5xx with an empty body when the backend is down.
       if (response.status >= 500) message = 'The backend is not responding. Is it running?'
     }
-    throw new ApiError(message, response.status)
+    throw new ApiError(message, response.status, retryAfter)
   }
   return (await response.json()) as T
 }
@@ -43,7 +48,9 @@ export interface Health {
   version: string
   python: string
   ffmpeg: boolean
+  /** Which stock video sources have an API key in .env. */
   pexels: boolean
+  pixabay: boolean
   canvas: { width: number; height: number; fps: number }
   tts: {
     device: 'cpu' | 'directml'
@@ -85,7 +92,7 @@ export interface Job<T = unknown> {
   error: string | null
 }
 
-export type MediaSource = 'pexels' | 'upload' | 'ai'
+export type MediaSource = 'pexels' | 'pixabay' | 'upload' | 'ai'
 
 /** A clip or image in the media library, which all projects share. */
 export interface LibraryItem {
@@ -101,7 +108,7 @@ export interface LibraryItem {
   fps: number | null
   hasAudio: boolean
   size: number
-  /** Where it came from: a Pexels download, an import, or an AI shot made by the app. */
+  /** Where it came from: a Pexels or Pixabay download, an import, or an AI shot made by the app. */
   source: MediaSource
   aiGenerated: boolean
   /** Narrower than 1080 pixels, so it's scaled up to fill the frame. */
@@ -109,20 +116,30 @@ export interface LibraryItem {
   originalName: string | null
   addedAt: string
   pexels: { videoId: number; url: string; photographer: string; photographerUrl: string | null } | null
+  pixabay: { videoId: number; url: string; uploader: string; uploaderUrl: string | null } | null
   generation: Record<string, unknown> | null
 }
 
-export interface PexelsResult {
+/** A stock video source that needs an API key in .env. */
+export type StockSource = 'pexels' | 'pixabay'
+export type Orientation = 'portrait' | 'landscape' | 'any'
+
+/** One search result, the same shape for Pexels and Pixabay. */
+export interface StockResult {
+  source: StockSource
   id: number
   title: string
+  /** The video's page on Pexels or Pixabay. */
   url: string
   duration: number
   width: number
   height: number
-  image: string
-  photographer: string
-  photographerUrl: string | null
-  /** A small file for the hover preview, played straight from Pexels. */
+  orientation: 'portrait' | 'landscape' | 'square'
+  image: string | null
+  /** Photographer (Pexels) or uploader (Pixabay). */
+  author: string
+  authorUrl: string | null
+  /** A small file for the hover preview, played straight from the source. */
   previewUrl: string | null
   /** The file that "Add" downloads. */
   file: { width: number; height: number; fps: number | null; quality: string | null }
@@ -130,11 +147,14 @@ export interface PexelsResult {
   libraryId: string | null
 }
 
-export interface PexelsSearchResult {
+export interface StockSearchResult {
+  source: StockSource
   page: number
   totalResults: number
+  /** False when Pixabay results are still being sorted by orientation (more may match). */
+  totalExact?: boolean
   hasMore: boolean
-  results: PexelsResult[]
+  results: StockResult[]
 }
 
 export interface AutofillSentence {
@@ -198,13 +218,12 @@ export const api = {
       `/api/library/${encodeURIComponent(itemId)}${force ? '?force=true' : ''}`,
       { method: 'DELETE' },
     ),
-  pexelsSearch: (query: string, page: number, orientation: 'portrait' | 'any') =>
-    request<PexelsSearchResult>(
-      `/api/pexels/search?${new URLSearchParams({ query, page: String(page), orientation })}`,
-    ),
-  addFromPexels: (videoId: number) => request<Job<LibraryItem>>(`/api/pexels/${videoId}/add`, json('POST', {})),
-  startAutofill: (sentences: string[]) =>
-    request<Job<{ sentences: AutofillSentence[] }>>('/api/autofill', json('POST', { sentences })),
+  stockSearch: (source: StockSource, query: string, page: number, orientation: Orientation) =>
+    request<StockSearchResult>(`/api/${source}/search?${new URLSearchParams({ query, page: String(page), orientation })}`),
+  addFromStock: (source: StockSource, videoId: number) =>
+    request<Job<LibraryItem>>(`/api/${source}/${videoId}/add`, json('POST', {})),
+  startAutofill: (sentences: string[], source: StockSource | null) =>
+    request<Job<{ source: StockSource; sentences: AutofillSentence[] }>>('/api/autofill', json('POST', { sentences, source })),
   getPronunciations: () => request<{ entries: PronunciationEntry[] }>('/api/pronunciations'),
   savePronunciations: (entries: PronunciationEntry[]) =>
     request<{ entries: PronunciationEntry[] }>('/api/pronunciations', json('PUT', { entries })),

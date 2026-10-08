@@ -3,15 +3,18 @@ import { ImportFiles } from '../library/ImportFiles'
 import { LibraryList } from '../library/LibraryList'
 import { useLibrary } from '../library/libraryStore'
 import { AutofillSection } from './AutofillSection'
-import { PexelsSearch } from './PexelsSearch'
+import { StockSearch } from './StockSearch'
+import { SOURCE_LABEL } from './stockSources'
+import { useCurrentSource } from './stockStore'
 
 export function MediaPanel() {
   const count = useLibrary((s) => s.items.length)
+  const source = useCurrentSource()
 
   return (
     <>
-      <Section label="Stock footage" hint="Videos from Pexels, free to use. Add one to put it in your library.">
-        <PexelsSearch />
+      <Section label="Stock footage" hint={`Videos from ${SOURCE_LABEL[source]}, free to use. Add one to download it into your library.`}>
+        <StockSearch />
       </Section>
 
       <AutofillSection />

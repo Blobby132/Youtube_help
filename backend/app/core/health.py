@@ -46,6 +46,7 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, An
         "python": platform.python_version(),
         "ffmpeg": shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None,
         "pexels": settings.pexels_api_key is not None,
+        "pixabay": settings.pixabay_api_key is not None,
         "canvas": {"width": CANVAS_WIDTH, "height": CANVAS_HEIGHT, "fps": FPS},
         "tts": tts_status(settings),
         "captions": {

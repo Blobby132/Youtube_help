@@ -6,7 +6,7 @@ backend for the heavy work. Everything is free: no paid APIs, no credits.
 
 - **AI voiceover** with [Kokoro TTS](https://huggingface.co/hexgrad/Kokoro-82M), running locally
 - **Word-timed captions** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), running locally
-- **Stock footage** from [Pexels](https://www.pexels.com/api/) (free API key)
+- **Stock footage** from [Pixabay](https://pixabay.com/api/docs/) or [Pexels](https://www.pexels.com/api/) (free API keys)
 - **Final render** with FFmpeg
 
 ## Build status
@@ -24,7 +24,7 @@ The app is built in stages. Each stage is tested before the next one starts.
 
 Working now: the full layout, autosaved projects, the script box, all three ways to make a
 voiceover (AI read, recording, upload) plus background music, word-timed captions, a media
-library shared by all projects (Pexels search, your own clips and images, Auto-fill), and a
+library shared by all projects (Pixabay and Pexels search, your own clips and images, Auto-fill), and a
 timeline whose clips, voiceover and captions play together in the preview. Render (stage 6)
 is shown but disabled.
 
@@ -64,16 +64,24 @@ in `backend\.venv`, installs the Python and npm packages, and downloads the Koko
 (about 350 MB) and the Whisper caption model (about 480 MB), once, into `models\`. Run it
 again whenever you pull an update.
 
-### Pexels API key
+### Stock video API keys (Pixabay, Pexels)
 
-Stock search needs a free key: sign up at <https://www.pexels.com/api/>, then open `.env`
-in the project folder and paste it in:
+Stock search needs a free key from at least one of these:
+
+- **Pixabay**: log in at <https://pixabay.com>, then copy your key from
+  <https://pixabay.com/api/docs/> (it's shown in the "Parameters" section once you're logged in).
+- **Pexels**: <https://www.pexels.com/api/> (Pexels has paused new keys; an existing key still
+  works).
+
+Open `.env` in the project folder and paste the key(s) in, then restart the app:
 
 ```ini
-PEXELS_API_KEY=your-key-here
+PIXABAY_API_KEY=your-pixabay-key
+PEXELS_API_KEY=your-pexels-key
 ```
 
-The key stays on your PC. It is read by the backend only and never sent to the browser.
+With one key, the app uses that source. With both, the Media tab shows a **Source** switch.
+Keys stay on your PC: the backend reads them and never sends them to the browser.
 
 ## Running the app
 
@@ -190,11 +198,12 @@ clip downloaded once can be used in any number of videos. It lives in `library\`
 folder (`LIBRARY_DIR` in `.env` moves it): `library.json` lists the clips, `clips\` holds the
 files and `thumbs\` the thumbnails. Each clip records:
 
-- where it came from: `pexels`, `upload` (your own files) or `ai` (shots the app makes itself,
-  coming with "Generate shot"), and an **AI-generated** flag;
+- where it came from: `pixabay`, `pexels`, `upload` (your own files) or `ai` (shots the app
+  makes itself, coming with "Generate shot"), and an **AI-generated** flag;
 - its resolution and length. Clips narrower than 1080 pixels are marked **Low res**: they are
   scaled up to fill the 1080×1920 frame and can look soft (AI clips are often 448×832);
-- for Pexels videos, the video id, its page URL and the photographer, shown as a credit.
+- for Pixabay videos, the video id, its page URL and the uploader; for Pexels videos, the video
+  id, its page URL and the photographer. Both are shown as a credit.
 
 Tick or untick **AI-generated** on any library card to change the flag later. **+** puts a
 clip in the first gap on the timeline; you can also drag a card onto the video track. The
@@ -206,18 +215,32 @@ Every way into the library goes through one backend function,
 with ffprobe, converts it to H.264 if the browser can't play it, makes a thumbnail and records
 the source. The coming "Generate shot" button will save ComfyUI results through it too.
 
-### Stock footage (Pexels)
+### Stock footage (Pixabay, Pexels)
 
-Type a few words under **Stock footage** and press **Search**. Results are portrait videos by
-default; **Any** includes wide ones (listed after the portrait ones), which are cropped to 9:16.
-Hover a result to preview it. **Add** downloads it into the library: the smallest file that
-covers the whole 1080×1920 frame without being scaled up, which means the 1080×1920 file of a
-portrait video (its 4K file looks the same in a 1080p Short and is about four times bigger) and
-the 4K file of a landscape video, so its 9:16 crop stays sharp. It is always at least 1080
-pixels wide when Pexels has such a file.
+Type a few words under **Stock footage** and press **Search**. **Portrait**, **Landscape** and
+**Any** filter the results (portrait by default; with Any, portrait videos are listed first);
+each result is labelled Portrait or Landscape, and wide videos are cropped to 9:16 on the
+timeline. Hover a result to preview it. **Add** downloads it into the library: the smallest
+file that covers the whole 1080×1920 frame without being scaled up, which means the 1080×1920
+file of a portrait video (its 4K file looks the same in a 1080p Short and is about four times
+bigger) and the 4K file of a landscape video, so its 9:16 crop stays sharp. It is always at
+least 1080 pixels wide when the source has such a file. The same rule applies to both sources.
 
-If the key is missing or Pexels refuses a request, the Media tab shows the reason (no key, key
-rejected, rate limit used up, no connection). Free keys allow 200 requests an hour.
+**Pixabay** follows Pixabay's API rules:
+
+- It can't filter videos by orientation, so the app works it out from each video's width and
+  height. It reads Pixabay's results 200 at a time (Pixabay returns at most 500 per search)
+  until it has a page of matches, so "Portrait" may show fewer results than Pixabay has videos.
+- Every answer is cached for 24 hours (in `data\cache\pixabay`): searching the same words
+  again, or switching the orientation filter, doesn't ask Pixabay again.
+- Videos are downloaded into the library rather than linked to, and the results say they come
+  from Pixabay. Search uses Pixabay's safe search.
+- The rate limit (100 requests a minute by default) is read from Pixabay's `X-RateLimit-*`
+  headers. Once it's used up, the app stops asking, the Media tab says when you can search
+  again, and **Search** shows a countdown. Searches you've already made still work.
+
+If a key is missing, or the source refuses a request, the Media tab shows the reason (no key,
+key rejected, rate limit used up, no connection). Pexels keys allow 200 requests an hour.
 
 ### Your own clips (and ComfyUI)
 
@@ -231,8 +254,9 @@ or `ComfyUI_00001_.png` (a 5-digit counter with a trailing underscore), or `Anim
 ### Auto-fill
 
 **Auto-fill from script** picks search words from each sentence (its nouns, with compounds
-like "airplane window" kept together, using spaCy), finds a portrait Pexels video for each
-sentence and places it on the timeline from the moment that sentence starts. With captions it
+like "airplane window" kept together, using spaCy), finds a video for each sentence on the
+source chosen in the Media tab (Pixabay or Pexels, whichever has a key; portrait videos first)
+and places it on the timeline from the moment that sentence starts. With captions it
 uses their word times; otherwise it spreads the sentences over the voiceover by word count.
 Very short sentences share a clip with their neighbour, a sentence with no match is covered by
 the clip before it, and a clip shorter than its sentence plays slower. It replaces the clips on
@@ -256,10 +280,11 @@ the timeline (after asking); **Undo** brings them back.
   clip, and **Fit to voiceover** closes every gap and ends the last clip with the voiceover. It
   keeps your cuts: each clip runs until the next one starts, using more of its footage, and
   plays slower if it runs out. **Undo/Redo** (Ctrl+Z, Ctrl+Shift+Z) cover all clip edits.
-- **9:16 crop.** Every clip fills the 1080×1920 frame and is cropped. Select a clip to set
-  which part stays (left–right for wide clips, top–bottom for tall ones) in the timeline
-  toolbar, or drag the picture in the preview. Images can be any length.
-- **Clip audio** is muted. Select a clip and click **Muted** to keep its sound under the
+- **9:16 crop.** Every clip fills the 1080×1920 frame and is cropped. Select a clip and use
+  **Crop position** in the **Clip settings** card beside the preview (left–right for wide
+  clips, top–bottom for tall ones), or drag the picture in the preview. On a narrow window the
+  clip settings move to the timeline toolbar. Images can be any length.
+- **Clip audio** is muted. In **Clip settings**, click **Muted** to keep its sound under the
   voiceover (useful for sound effects in AI clips), with its own volume. You can also change a
   clip's speed there.
 - **Preview.** Play shows the clips, voiceover and captions together, kept in step with the
@@ -298,14 +323,16 @@ npm test
 runs the backend test suite with pytest (`npm test -- -k projects` passes arguments through).
 It covers the text normalization, phonemes (including the RX 9060 XT sentence), the Kokoro
 engine and its DirectML-to-CPU fallback, voiceover and music uploads, caption alignment, the
-media library (imports, conversion, the AI flag, deleting, AI disclosure), Pexels search and
-downloads against a fake Pexels (no key or network needed), Auto-fill, and, once the models
+media library (imports, conversion, the AI flag, deleting, AI disclosure), Pexels and Pixabay
+search and downloads against fake APIs (no keys or network needed), including Pixabay's 24-hour
+cache, rate limit and orientation filter, Auto-fill and which source it uses, and, once the models
 are downloaded, real speech generation and a Kokoro → Whisper → captions round trip.
 `npm run test:frontend` runs the frontend unit tests (caption grouping and layout, the
 out-of-date check, every timeline edit, snapping, undo, the 9:16 crop, Auto-fill timing and the
 ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
 fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
-splitting, Pexels results and errors, and imports with the AI flag (on a new machine, first
+splitting, the crop control, Pexels and Pixabay results, the source switch, the rate-limit
+countdown, and imports with the AI flag (on a new machine, first
 run `npx playwright install chromium` once inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
 the frontend.
@@ -323,6 +350,8 @@ backend/                FastAPI app (Python)
   app/pronunciations/   the app-wide pronunciation list (data/pronunciations.json)
   app/library/          the shared media library: add_clip, imports, AI disclosure
   app/pexels/           Pexels search and downloads
+  app/pixabay/          Pixabay search (24-hour cache, rate limit) and downloads
+  app/stock/            what both share: the file choice, orientation, downloads
   app/autofill/         search words per sentence and one clip per sentence
   app/mix/              background music
   tests/                pytest suite
@@ -356,8 +385,8 @@ data/                   app-wide data, e.g. the pronunciation list (not committe
   file's checksum is verified, so a broken download is never used.
 - **The Whisper download failed**: run `npm run setup` again (or click Generate captions). It
   comes from Hugging Face, so that site must be reachable.
-- **Pexels says the key was rejected**: check `PEXELS_API_KEY` in `.env` (no quotes or spaces)
-  and restart the app; `.env` is read when the app starts.
+- **Pixabay or Pexels says the key was rejected**: check `PIXABAY_API_KEY` or `PEXELS_API_KEY`
+  in `.env` (no quotes or spaces) and restart the app; `.env` is read when the app starts.
 - **An imported clip takes a while**: files the browser can't play (HEVC, ProRes, AVI, …) are
   converted to H.264 on import; the progress bar shows how far along it is.
 - **A clip on the timeline says "Missing clip"**: it was deleted from the library. Delete it

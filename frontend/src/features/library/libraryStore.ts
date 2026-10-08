@@ -1,7 +1,7 @@
 // The shared media library, as the frontend sees it, plus the imports and Pexels downloads in
 // progress. Lives outside components so switching tabs doesn't lose a running download.
 import { create } from 'zustand'
-import { ApiError, api, type LibraryItem } from '../../lib/api'
+import { ApiError, api, type LibraryItem, type StockSource } from '../../lib/api'
 import { waitForJob } from '../../lib/jobs'
 import { flushSave } from '../../state/project/persistence'
 import { updateProject, useProjectStore } from '../../state/project/store'
@@ -28,8 +28,8 @@ interface LibraryState {
   staged: StagedFile[]
   /** Imports running or failed, by staged key. */
   imports: Record<string, Transfer & { name: string }>
-  /** Pexels downloads running or failed, by Pexels video id. */
-  downloads: Record<number, Transfer>
+  /** Stock downloads running or failed, by downloadKey(source, video id). */
+  downloads: Record<string, Transfer>
 }
 
 export const useLibrary = create<LibraryState>()(() => ({
@@ -112,37 +112,40 @@ export async function importStaged() {
 
 export const dismissImport = (key: string) => setImport(key, null)
 
-// Pexels --------------------------------------------------------------------------------------
+// Stock video (Pexels, Pixabay) -----------------------------------------------------------------
 
-function setDownload(videoId: number, value: Transfer | null) {
+export const downloadKey = (source: StockSource, videoId: number) => `${source}:${videoId}`
+
+function setDownload(key: string, value: Transfer | null) {
   useLibrary.setState((s) => {
     const downloads = { ...s.downloads }
-    if (value) downloads[videoId] = value
-    else delete downloads[videoId]
+    if (value) downloads[key] = value
+    else delete downloads[key]
     return { downloads }
   })
 }
 
-/** Downloads a Pexels video into the library; resolves with the item (null on failure). */
-export async function addFromPexels(videoId: number): Promise<LibraryItem | null> {
-  if (useLibrary.getState().downloads[videoId]?.error === null) return null // already running
-  setDownload(videoId, { progress: 0, message: 'Starting…', error: null })
+/** Downloads a stock video into the library; resolves with the item (null on failure). */
+export async function addFromStock(source: StockSource, videoId: number): Promise<LibraryItem | null> {
+  const key = downloadKey(source, videoId)
+  if (useLibrary.getState().downloads[key]?.error === null) return null // already running
+  setDownload(key, { progress: 0, message: 'Starting…', error: null })
   try {
-    const job = await api.addFromPexels(videoId)
+    const job = await api.addFromStock(source, videoId)
     const item = await waitForJob(job, (update) =>
-      setDownload(videoId, { progress: update.progress, message: update.message, error: null }),
+      setDownload(key, { progress: update.progress, message: update.message, error: null }),
     )
     upsert(item)
-    setDownload(videoId, null)
+    setDownload(key, null)
     return item
   } catch (error) {
-    console.error(`Pexels download ${videoId} failed:`, error)
-    setDownload(videoId, { progress: 0, message: '', error: message(error) })
+    console.error(`${source} download ${videoId} failed:`, error)
+    setDownload(key, { progress: 0, message: '', error: message(error) })
     return null
   }
 }
 
-export const dismissDownload = (videoId: number) => setDownload(videoId, null)
+export const dismissDownload = (source: StockSource, videoId: number) => setDownload(downloadKey(source, videoId), null)
 
 /** Puts items (e.g. from Auto-fill) into the list without reloading it. */
 export function addToList(items: LibraryItem[]) {

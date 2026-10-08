@@ -151,12 +151,21 @@ def test_search_prefers_portrait_and_shows_what_the_ui_needs(client: TestClient,
     [result] = body["results"]
     assert result["id"] == 11
     assert result["title"] == "Waves crashing on the shore"
-    assert result["photographer"] == "Jane Doe"
+    assert result["source"] == "pexels"
+    assert result["author"] == "Jane Doe"
+    assert result["orientation"] == "portrait"
     assert result["url"] == "https://www.pexels.com/video/waves-crashing-on-the-shore-11/"
     assert result["previewUrl"].endswith("11-360x640.mp4")  # small file for the hover preview
     assert (result["file"]["width"], result["file"]["height"]) == (1080, 1920)
     assert result["libraryId"] is None
     assert "test-key" not in str(body)  # the key never reaches the browser
+
+
+def test_landscape_is_filtered_by_pexels(client: TestClient, fake: FakePexels) -> None:
+    fake.add(video_entry(23, 1920, 1080, sizes=[(1920, 1080)]), "city")
+    body = client.get("/api/pexels/search", params={"query": "city", "orientation": "landscape"}).json()
+    assert fake.requests[-1].url.params["orientation"] == "landscape"
+    assert [r["orientation"] for r in body["results"]] == ["landscape"]
 
 
 def test_any_orientation_lists_portrait_results_first(client: TestClient, fake: FakePexels) -> None:

@@ -15,3 +15,6 @@ def setup_logging() -> None:
     logging.getLogger("uvicorn.access").addFilter(
         lambda record: "/api/health" not in record.getMessage()
     )
+    # httpx logs every request URL at INFO, and Pixabay's API key is part of its URLs: keep the
+    # key out of the log (failures are still logged, with the reason, by the callers).
+    logging.getLogger("httpx").setLevel(logging.WARNING)

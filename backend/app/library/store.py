@@ -29,7 +29,7 @@ from app.projects.store import utc_now
 
 log = logging.getLogger("shorts.library")
 
-Source = Literal["pexels", "upload", "ai"]
+Source = Literal["pexels", "pixabay", "upload", "ai"]
 SOURCES: tuple[str, ...] = get_args(Source)
 
 INDEX_FILE = "library.json"
@@ -59,6 +59,14 @@ class PexelsCredit:
 
 
 @dataclass(frozen=True)
+class PixabayCredit:
+    video_id: int
+    url: str
+    uploader: str
+    uploader_url: str | None = None
+
+
+@dataclass(frozen=True)
 class ClipMetadata:
     """What is known about a file besides its contents."""
 
@@ -66,6 +74,7 @@ class ClipMetadata:
     ai_generated: bool = False
     original_name: str | None = None
     pexels: PexelsCredit | None = None
+    pixabay: PixabayCredit | None = None
     # How an AI shot was made (prompt, model, seed, ...), kept as given.
     generation: dict[str, Any] | None = field(default=None)
 
@@ -140,6 +149,12 @@ class Library:
     def find_pexels(self, video_id: int) -> dict[str, Any] | None:
         for item in self.list():
             if (item.get("pexels") or {}).get("videoId") == video_id:
+                return item
+        return None
+
+    def find_pixabay(self, video_id: int) -> dict[str, Any] | None:
+        for item in self.list():
+            if (item.get("pixabay") or {}).get("videoId") == video_id:
                 return item
         return None
 
@@ -249,7 +264,7 @@ def entry(
     metadata: ClipMetadata,
 ) -> dict[str, Any]:
     """The JSON entry for one library item (camelCase, like the project file)."""
-    pexels = metadata.pexels
+    pexels, pixabay = metadata.pexels, metadata.pixabay
     return {
         "id": item_id,
         "kind": info.kind,
@@ -276,6 +291,14 @@ def entry(
             "url": pexels.url,
             "photographer": pexels.photographer,
             "photographerUrl": pexels.photographer_url,
+        },
+        "pixabay": None
+        if pixabay is None
+        else {
+            "videoId": pixabay.video_id,
+            "url": pixabay.url,
+            "uploader": pixabay.uploader,
+            "uploaderUrl": pixabay.uploader_url,
         },
         "generation": metadata.generation,
     }

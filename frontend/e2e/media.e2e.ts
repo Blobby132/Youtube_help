@@ -1,18 +1,102 @@
 import { expect, test } from '@playwright/test'
-import { fakeBackend, MISSING_KEY, pexelsResult } from './fakeBackend'
+import { fakeBackend, MISSING_KEY, pexelsResult, stockResult } from './fakeBackend'
 
-test('Pexels search shows the real reason when the key is missing', async ({ page }) => {
-  await fakeBackend(page, { pexels: null })
+test('without a key, search shows how to add one and the real reason', async ({ page }) => {
+  await fakeBackend(page)
   await page.goto('/')
   await page.getByRole('tab', { name: 'Media' }).click()
-  await page.getByRole('searchbox', { name: 'Search Pexels' }).fill('ocean')
-  await page.getByRole('button', { name: 'Search', exact: true }).click()
   const media = page.getByRole('complementary', { name: 'Script, media and ranking' })
-  await expect(media.getByRole('alert')).toContainText(MISSING_KEY)
+  await expect(media.getByRole('status').filter({ hasText: 'PIXABAY_API_KEY' })).toBeVisible()
+  await expect(media.getByRole('button', { name: 'Auto-fill from script' })).toBeDisabled()
+  await page.getByRole('searchbox', { name: 'Search Pixabay' }).fill('ocean')
+  await page.getByRole('button', { name: 'Search', exact: true }).click()
+  await expect(media.getByRole('alert')).toContainText(MISSING_KEY.pixabay)
+})
+
+test('Pixabay results say where they come from and filter by orientation', async ({ page }) => {
+  const backend = await fakeBackend(page, {
+    pixabay: [stockResult('pixabay', 201, 'Ocean, waves', 'portrait'), stockResult('pixabay', 202, 'Beach, sunset', 'landscape')],
+  })
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Media' }).click()
+  // Only Pixabay has a key: no source switch.
+  await expect(page.getByRole('radiogroup', { name: 'Stock video source' })).toHaveCount(0)
+  await page.getByRole('searchbox', { name: 'Search Pixabay' }).fill('ocean')
+  await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+  const results = page.getByRole('list', { name: 'Pixabay results' }).getByRole('listitem')
+  await expect(results).toHaveCount(1)
+  await expect(results.first()).toContainText('Portrait')
+  await expect(page.getByTestId('stock-credit')).toContainText(/videos? from Pixabay/)
+
+  await page.getByRole('radio', { name: 'Landscape' }).click()
+  await expect(results).toHaveCount(1)
+  await expect(results.first()).toContainText('Landscape')
+  await page.getByRole('radio', { name: 'Any' }).click()
+  await expect(results).toHaveCount(2)
+  expect(backend.searched.map((s) => s.orientation)).toEqual(['portrait', 'landscape', 'any'])
+
+  await page.getByRole('button', { name: 'Add “Ocean, waves” to the library' }).click()
+  const card = page.getByTestId('library-item').filter({ hasText: 'Ocean, waves' })
+  await expect(card).toContainText('1080×1920 · 2.0 s · Pixabay')
+  await expect(card.getByRole('link', { name: 'by SeaFilms on Pixabay' })).toHaveAttribute('href', 'https://pixabay.com/videos/id-201/')
+})
+
+test('a used-up Pixabay rate limit shows when you can search again', async ({ page }) => {
+  const backend = await fakeBackend(page, { pixabay: [stockResult('pixabay', 201, 'Ocean, waves')] })
+  backend.limits.pixabay = 1
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Media' }).click()
+  const box = page.getByRole('searchbox', { name: 'Search Pixabay' })
+  const searchButton = page.getByRole('search').getByRole('button')
+  await box.fill('ocean')
+  await searchButton.click()
+  await expect(page.getByRole('list', { name: 'Pixabay results' }).getByRole('listitem')).toHaveCount(1)
+
+  await box.fill('beach')
+  await searchButton.click()
+  const warning = page.getByRole('alert').filter({ hasText: 'rate limit is used up' })
+  await expect(warning).toContainText('You can search Pixabay again in 0:0')
+  await expect(searchButton).toBeDisabled()
+  await expect(searchButton).toHaveText(/0:0\d/)
+
+  // The countdown ends and Search works again.
+  backend.limits.pixabay = null
+  await expect(searchButton).toHaveText('Search', { timeout: 6000 })
+  await expect(warning).toHaveCount(0)
+  await searchButton.click()
+  await expect(page.getByRole('list', { name: 'Pixabay results' })).toBeVisible()
+})
+
+test('with both keys, a switch picks the source', async ({ page }) => {
+  const backend = await fakeBackend(page, {
+    pexels: [pexelsResult(101, 'Waves crashing on the shore')],
+    pixabay: [stockResult('pixabay', 201, 'Ocean, waves')],
+  })
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Media' }).click()
+  const sources = page.getByRole('radiogroup', { name: 'Stock video source' })
+  await expect(sources.getByRole('radio')).toHaveText(['Pixabay', 'Pexels'])
+
+  await page.getByRole('searchbox', { name: 'Search Pixabay' }).fill('ocean')
+  await page.getByRole('button', { name: 'Search', exact: true }).click()
+  await expect(page.getByTestId('stock-credit')).toContainText(/videos? from Pixabay/)
+
+  // Switching repeats the search on the other source.
+  await sources.getByRole('radio', { name: 'Pexels' }).click()
+  await expect(page.getByRole('list', { name: 'Pexels results' }).getByRole('listitem')).toHaveCount(1)
+  await expect(page.getByTestId('stock-credit')).toContainText(/videos? from Pexels/)
+  expect(backend.searched.map((s) => s.source)).toEqual(['pixabay', 'pexels'])
+
+  // The choice is remembered.
+  await page.reload()
+  await page.getByRole('tab', { name: 'Media' }).click()
+  await expect(page.getByRole('searchbox', { name: 'Search Pexels' })).toBeVisible()
 })
 
 test('add a Pexels result to the library', async ({ page }) => {
   await fakeBackend(page, { pexels: [pexelsResult(101, 'Waves crashing on the shore'), pexelsResult(102, 'City at night')] })
+  // Only Pexels has a key here.
   await page.goto('/')
   await page.getByRole('tab', { name: 'Media' }).click()
   await page.getByRole('searchbox', { name: 'Search Pexels' }).fill('ocean')
