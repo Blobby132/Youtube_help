@@ -1,7 +1,7 @@
 // The project document. It is saved as-is to projects/<id>/project.json, so every
 // field must be plain JSON. Times are in seconds, colors are #rrggbb.
 
-export const PROJECT_VERSION = 1
+export const PROJECT_VERSION = 2
 
 export const CANVAS = { width: 1080, height: 1920, fps: 30 } as const
 
@@ -124,11 +124,18 @@ export interface Canvas {
   title: TitleSettings
 }
 
+/** A stretch of the video, in seconds. */
+export interface TimeRange {
+  start: number
+  end: number
+}
+
 export interface RankEntry {
   id: string
   label: string
-  /** Timeline clip this entry is shown over (kept when the clip is removed, so Undo brings it back). */
-  clipId: string | null
+  /** When the entry is on screen, on its own (clip edits never change it). Entries never
+   * overlap. null until it's given a time. Projects before version 2 linked a clip instead. */
+  time: TimeRange | null
 }
 
 export interface RankStyle {

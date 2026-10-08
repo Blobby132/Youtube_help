@@ -125,13 +125,17 @@ test('the title shows in a bar at the top, for the whole video or its first seco
   await expect.poll(() => pixel(page, 20, 160)).toBe('green')
 })
 
-test('ranking entries show over their clips, in order, with warnings', async ({ page }) => {
+test('ranking entries have their own times: added from the selection or sentence, resized on the Ranks lane', async ({ page }) => {
   await fakeBackend(page, {
     library: [libraryItem('m-a', { name: 'Alpha' }), libraryItem('m-b', { name: 'Bravo' })],
   })
   await page.goto('/')
   await expect(page.locator('[data-state="saved"]')).toBeVisible()
+  // An 8 s voiceover; the fake captions give each word 0.3 s, so the first sentence runs
+  // 0-2.68 s and the second ("It keeps the window from fogging up.") 2.7-4.78 s.
   await makeVoiceover(page)
+  await page.getByRole('button', { name: 'Generate captions' }).click()
+  await expect(page.getByRole('button', { name: 'Regenerate captions' })).toBeVisible()
   await page.getByRole('tab', { name: 'Media' }).click()
   // Alpha 0-2 s, Bravo 2-4 s.
   await page.getByRole('button', { name: 'Add “Alpha” to the timeline' }).click()
@@ -141,35 +145,70 @@ test('ranking entries show over their clips, in order, with warnings', async ({ 
   await left.getByRole('tab', { name: 'Ranking' }).click()
   await expect(left.getByRole('radio', { name: 'Count down 5→1' })).toHaveAttribute('aria-checked', 'true')
 
-  // Select Alpha, add an entry (linked to Alpha), then one more (the next free clip: Bravo).
+  // With Alpha selected, a new entry takes Alpha's span.
   await page.getByRole('button', { name: 'Clip Alpha' }).click()
   await left.getByRole('button', { name: 'Add entry' }).click()
   await expect(left.getByLabel('Label of #1')).toBeFocused()
   await left.getByLabel('Label of #1').fill('Boeing 747')
+  const entries = left.getByTestId('rank-entry')
+  await expect(entries.nth(0).getByTestId('rank-time')).toHaveText('0:00.00–0:02.00')
+
+  // Alpha is already used, so the next one takes the sentence under the playhead.
+  await seek(page, 3.5)
   await left.getByRole('button', { name: 'Add entry' }).click()
   await left.getByLabel('Label of #1').fill('Airbus A380')
-
-  // Counting down from 2: Alpha is #2, Bravo #1.
-  const entries = left.getByTestId('rank-entry')
   await expect(entries).toHaveCount(2)
   await expect(left.getByRole('radio', { name: 'Count down 2→1' })).toBeVisible()
   await expect(left.getByLabel('Label of #2')).toHaveValue('Boeing 747')
-  await expect(left.getByLabel('Clip of #2')).toHaveValue(/.+/)
-  await expect(left.getByLabel('Clip of #2').locator('option:checked')).toContainText('Alpha')
-  await expect(left.getByLabel('Clip of #1').locator('option:checked')).toContainText('Bravo')
+  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.70–0:04.78')
   const blocks = page.getByTestId('rank-block')
   await expect(blocks).toHaveText(['#2 Boeing 747', '#1 Airbus A380'])
 
-  // The rank number is drawn at the top while its clip plays, and not in the gap after.
+  // The rank number is drawn at the top during its time, and not in the gap between.
   await seek(page, 1)
   await expect.poll(() => yellowPixels(page, 220, 200)).toBeGreaterThan(200)
-  await seek(page, 5)
+  await seek(page, 2.4)
   await expect.poll(() => yellowPixels(page, 220, 200)).toBe(0)
 
-  // Moving Bravo's entry first puts the count out of order.
+  // Dragging #1's start edge far left stops at #2's end: entries never overlap.
+  const first = (await blocks.nth(0).boundingBox())!
+  const pxPerSecond = first.width / 2
+  let box = (await blocks.nth(1).boundingBox())!
+  await page.mouse.move(box.x + 3, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x - 2 * pxPerSecond, box.y + box.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.00–0:04.78')
+
+  // Its end edge snaps to the end of Bravo (a clip edge) at 4 s.
+  box = (await blocks.nth(1).boundingBox())!
+  const snapLine = page.locator('[class*="snapLine"]')
+  await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width - 3 - 0.78 * pxPerSecond + 1, box.y + box.height / 2, { steps: 6 })
+  await expect(snapLine).toHaveText('clip')
+  await page.mouse.up()
+  await expect(snapLine).toHaveCount(0)
+  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.00–0:04.00')
+
+  // Splitting and deleting clips leaves the entries' times alone.
+  await seek(page, 1)
+  await page.getByRole('button', { name: 'Split' }).click()
+  await page.getByRole('button', { name: 'Clip Bravo' }).click()
+  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect(page.getByTestId('timeline-clip')).toHaveCount(2)
+  await expect(blocks).toHaveText(['#2 Boeing 747', '#1 Airbus A380'])
+  await expect(entries.nth(0).getByTestId('rank-time')).toHaveText('0:00.00–0:02.00')
+  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.00–0:04.00')
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByTestId('timeline-clip')).toHaveCount(2)
+  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.00–0:04.00')
+
+  // Moving Airbus's entry first puts the count out of order.
   await left.getByRole('button', { name: 'Move #1 up' }).click()
   await expect(left.getByLabel('Label of #2')).toHaveValue('Airbus A380')
-  await expect(entries.nth(1)).toContainText('#1 plays before #2: move it up, or pick a later clip.')
+  await expect(entries.nth(1)).toContainText('#1 plays before #2: move it up, or give it a later time.')
   await expect(blocks.filter({ hasText: '#1 Boeing 747' })).toHaveAttribute('title', /plays out of order/)
 
   // Dragging it back down puts it right again.
@@ -182,20 +221,12 @@ test('ranking entries show over their clips, in order, with warnings', async ({ 
   await left.getByRole('radio', { name: 'Count up 1→2' }).click()
   await expect(blocks).toHaveText(['#1 Boeing 747', '#2 Airbus A380'])
 
-  // Deleting Bravo from the timeline leaves its entry waiting for a clip; Undo brings it back.
-  await page.getByRole('button', { name: 'Clip Bravo' }).click()
-  await page.getByRole('button', { name: 'Delete', exact: true }).click()
-  await expect(entries.nth(1)).toContainText('Its clip is no longer on the timeline: pick another.')
-  await expect(blocks).toHaveCount(1)
-  await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(blocks).toHaveCount(2)
-  await expect(left.getByText(/no longer on the timeline/)).toHaveCount(0)
-
   // Saved with the project.
   await expect(page.locator('[data-state="saved"]')).toBeVisible()
   await page.reload()
   await page.getByRole('complementary', { name: 'Script, media and ranking' }).getByRole('tab', { name: 'Ranking' }).click()
   await expect(page.getByTestId('rank-block')).toHaveText(['#1 Boeing 747', '#2 Airbus A380'])
+  await expect(page.getByTestId('rank-time')).toHaveText(['0:00.00–0:02.00', '0:02.00–0:04.00'])
 
   // Removing an entry renumbers the rest.
   await page.getByRole('button', { name: 'Remove #1' }).click()

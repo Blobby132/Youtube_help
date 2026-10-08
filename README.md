@@ -364,26 +364,27 @@ Their positions are shared numbers (`frontend/src/features/preview/captionLayout
 ## Ranking
 
 The **Ranking** tab is for countdown videos like "Top 5 …". Each entry shows a big rank number
-("#3") and its label at the top of the video while its clip plays, under the title if there
-is one.
+("#3") and its label at the top of the video during its own stretch of time, under the title if
+there is one.
 
-- **Add entry** links the new entry to the selected clip, or else the clip under the playhead,
-  or else the next clip after the ones already linked. Pick or change an entry's clip in its
-  list; a clip can belong to one entry only.
+- **Add entry** times the new entry to the selected clip's span, or else the sentence under the
+  playhead (from the captions), or else a few seconds from the playhead. Entries never overlap,
+  so a new entry is trimmed to the time no other entry uses. **Set time** on an entry does the
+  same for an existing one.
+- **Drag an entry's edges** on the **Ranks** track to change when it shows. Edges snap to words,
+  caption changes, clip edges, the playhead and the ends of the video (hold Alt to place freely),
+  and stop at the next entry. Click an entry to open the Ranking tab.
 - Entries are listed **in the order they play**. Drag them by the handle, or use the arrows, to
   reorder. **Count down** numbers the first entry #N and the last #1; **Count up** starts at
   #1. Click an entry's number to show it in the preview.
-- The **Ranks** track on the timeline shows each entry over its clip. Click one to open the
-  Ranking tab.
 - **Look**: the font, the number's size (the label is about a third of it) and the colours of
   the number and the label.
-- **Warnings** in the list: an entry without a clip, an entry whose clip was deleted or replaced
-  (for example by Auto-fill; Undo brings the clip and the link back), and an entry whose clip
-  plays before the one above it, so the count would run out of order.
+- **Warnings** in the list: an entry without a time yet, and an entry that starts before the one
+  above it, so the count would run out of order.
 
-An entry is linked to one clip, so it shows for that clip's length. If one item is narrated
-over several clips (Auto-fill makes one clip per sentence), the rank shows over the first
-clip you link, and Split leaves the link on the first half.
+Entries keep their times whatever happens to the clips: Auto-fill, Delete, Split, Fit to
+voiceover and moving clips never change them. Projects saved before this linked each entry to a
+clip; opening one gives each entry its clip's span, so the video looks the same.
 
 ### AI disclosure
 
@@ -428,13 +429,14 @@ saving finished shots to the library, failures, cancelling, a lost job, an unrea
 and picking up jobs again after a restart.
 `npm run test:frontend` runs the frontend unit tests (caption grouping and layout, the
 out-of-date check, every timeline edit, snapping, undo, the 9:16 crop and Fit inside, the title
-and ranking layout, rank numbers and warnings, upgrading older projects, Auto-fill timing and
+and ranking layout, rank numbers, warnings and time ranges, upgrading older projects (clip links to times), Auto-fill timing and
 the ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
 fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
 splitting, the crop control, Pexels and Pixabay results, the source switch, the rate-limit
 countdown, imports with the AI flag, and Generate shot (the dialog, the jobs list across a
 reload, cancelling, and an AI clip's Copy prompt, Generate again and Final quality), Fit inside
-over a solid and a blurred background, the title bar and its timing, and ranking entries (linking,
+over a solid and a blurred background, the title bar and its timing, and ranking entries (timing
+from the selection and the sentence, dragging and snapping edges, clip edits leaving them alone,
 reordering, warnings, the overlay in the preview, saving) (on a new machine, first
 run `npx playwright install chromium` once inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of

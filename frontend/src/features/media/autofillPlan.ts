@@ -10,7 +10,8 @@ export const MAX_SEGMENTS = 80
 
 const MARKUP = /\[([^\]]+)\]\([^)]*\)/g
 const JOINERS = new Set(['-', '–', '—', '…', '...', '--'])
-const SENTENCE_END = /[.!?…]["'”’)\]]*$/
+/** A word that ends a sentence (also used for the ranking's "sentence under the playhead"). */
+export const SENTENCE_END = /[.!?…]["'”’)\]]*$/
 
 /** The script's words the way captions count them (backend: captions/align.py script_words). */
 export function scriptWords(script: string): string[] {

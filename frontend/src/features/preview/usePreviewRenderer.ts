@@ -50,7 +50,7 @@ export function usePreviewRenderer(canvasRef: RefObject<HTMLCanvasElement | null
         void loadFont(title.fontId).catch(() => undefined)
         if (titleShown(title, time)) drawTitle(ctx, title, titleLayout)
       }
-      const rank = rankAt(ranking, clips, time)
+      const rank = rankAt(ranking, time)
       if (rank) {
         void loadFont(ranking.style.fontId).catch(() => undefined)
         drawRank(ctx, rank.entry, rank.rank, ranking.style, rankTop(titleLayout?.bottom ?? null))

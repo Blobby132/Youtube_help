@@ -114,11 +114,37 @@
   color: var(--text-faint);
 }
 
-.select {
-  height: 26px;
-  padding: 0 4px;
+.timeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 22px;
+}
+
+.time {
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.timeButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.timeButton:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 .problem {

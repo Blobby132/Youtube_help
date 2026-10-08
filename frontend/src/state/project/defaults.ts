@@ -1,5 +1,6 @@
 import { newId } from '../../lib/ids'
-import { PROJECT_VERSION, type Project, type TimelineClip } from './types'
+import { timesFromClipLinks } from '../../features/ranking/rankEntries'
+import { PROJECT_VERSION, type Project, type RankEntry, type TimeRange, type TimelineClip } from './types'
 
 export const DEFAULT_VOICE_ID = 'af_heart'
 
@@ -104,5 +105,28 @@ export function normalizeProject(raw: unknown): Project {
     .map(normalizeClip)
     .filter((clip): clip is TimelineClip => clip !== null)
     .sort((a, b) => a.start - b.start)
+  project.ranking.entries = normalizeEntries(project.ranking.entries, project.clips)
+  project.version = PROJECT_VERSION
   return project
+}
+
+function isTimeRange(value: unknown): value is TimeRange {
+  return isObject(value) && typeof value.start === 'number' && typeof value.end === 'number' && value.end > value.start
+}
+
+/**
+ * Before version 2 an entry showed over a linked clip (`clipId`); now it has its own time.
+ * An old link becomes the clip's span, so the video looks the same.
+ */
+function normalizeEntries(raw: unknown, clips: readonly TimelineClip[]): RankEntry[] {
+  const entries = (Array.isArray(raw) ? raw : []).filter(isObject)
+  const linked = timesFromClipLinks(
+    entries.map((e) => (typeof e.clipId === 'string' ? e.clipId : null)),
+    clips,
+  )
+  return entries.map((e, i) => ({
+    id: typeof e.id === 'string' ? e.id : newId('r'),
+    label: typeof e.label === 'string' ? e.label : '',
+    time: 'time' in e ? (isTimeRange(e.time) ? { start: e.time.start, end: e.time.end } : null) : linked[i],
+  }))
 }

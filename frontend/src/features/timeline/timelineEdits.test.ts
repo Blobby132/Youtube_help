@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { LibraryItem } from '../../lib/api'
 import { createProject } from '../../state/project/defaults'
-import { useProjectStore } from '../../state/project/store'
+import { updateProject, useProjectStore } from '../../state/project/store'
 import { setUi, useUi } from '../../state/ui'
 import { useLibrary } from '../library/libraryStore'
 import { addToTimeline, deleteSelected, fitClips, redo, splitAtPlayhead, undo, updateClip, useTimelineHistory } from './timelineEdits'
@@ -91,6 +91,33 @@ describe('timeline edits', () => {
     expect(spans()).toEqual(['m-a@0-6', 'm-b@6-10'])
     expect(clips()[0].speed).toBe(0.5)
     expect(useTimelineHistory.getState().notice).toBe('Slowed 1 clip down to fill its stretch.')
+  })
+
+  it('leaves ranking entries alone when clips are split, deleted, fitted, undone and redone', () => {
+    addToTimeline(item('m-a', 3))
+    addToTimeline(item('m-b', 6, true))
+    const entries = [
+      { id: 'r1', label: 'Over a', time: { start: 0, end: 3 } },
+      { id: 'r2', label: 'Over b', time: { start: 3.5, end: 8 } },
+      { id: 'r3', label: 'No time', time: null },
+    ]
+    updateProject((p) => {
+      p.ranking.entries = structuredClone(entries)
+    })
+    const ranked = () => useProjectStore.getState().project.ranking.entries
+
+    setUi({ playhead: 5, selectedClipId: null })
+    splitAtPlayhead()
+    setUi({ selectedClipId: clips()[0].id })
+    deleteSelected()
+    fitClips()
+    expect(spans()).not.toEqual(['m-a@0-3', 'm-b@3-9'])
+    expect(ranked()).toEqual(entries)
+    undo()
+    undo()
+    undo()
+    redo()
+    expect(ranked()).toEqual(entries)
   })
 
   it('starts a fresh history for another project', () => {
