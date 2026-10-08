@@ -42,6 +42,16 @@ function isTyping(target: EventTarget | null) {
   return target instanceof HTMLElement && !!target.closest('input, textarea, select, [contenteditable="true"]')
 }
 
+/**
+ * Whether Ctrl+Z belongs to the focused field (undoing its typing) rather than the timeline.
+ * Fields whose changes are on the timeline's history are marked data-undo="timeline", on them
+ * or on a panel around them (the Ranking tab); data-undo="field" inside such a panel gives
+ * Ctrl+Z back to that field.
+ */
+function fieldUndo(target: EventTarget | null) {
+  return isTyping(target) && (target as HTMLElement).closest('[data-undo]')?.getAttribute('data-undo') !== 'timeline'
+}
+
 export function Timeline() {
   const clipCount = useProject((p) => p.clips.length)
   const duration = useProject(projectDuration)
@@ -60,19 +70,18 @@ export function Timeline() {
   const visibleSeconds = Math.max(Math.max(duration, lastClipEnd) + TAIL_SECONDS, MIN_VISIBLE_SECONDS)
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // Delete removes the selected clip; Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo clip edits.
+  // Delete removes the selected clip; Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo clip and
+  // ranking edits.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (isTyping(event.target)) return
       const mod = event.ctrlKey || event.metaKey
-      if (mod && event.key.toLowerCase() === 'z') {
+      const key = event.key.toLowerCase()
+      if (mod && (key === 'z' || key === 'y')) {
+        if (fieldUndo(event.target)) return
         event.preventDefault()
-        if (event.shiftKey) redo()
+        if (key === 'y' || event.shiftKey) redo()
         else undo()
-      } else if (mod && event.key.toLowerCase() === 'y') {
-        event.preventDefault()
-        redo()
-      } else if ((event.key === 'Delete' || event.key === 'Backspace') && useUi.getState().selectedClipId) {
+      } else if ((event.key === 'Delete' || event.key === 'Backspace') && !isTyping(event.target) && useUi.getState().selectedClipId) {
         event.preventDefault()
         deleteSelected()
       }

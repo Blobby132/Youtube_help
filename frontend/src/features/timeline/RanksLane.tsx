@@ -3,11 +3,12 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatTimecode } from '../../lib/time'
 import { projectDuration } from '../../state/project/selectors'
-import { updateProject, useProject, useProjectStore } from '../../state/project/store'
+import { useProject, useProjectStore } from '../../state/project/store'
 import type { RankEntry } from '../../state/project/types'
 import { setUi, useUi } from '../../state/ui'
 import { groupCaptions } from '../captions/captionGroups'
 import { rankSpans, resizeEntry } from '../ranking/rankEntries'
+import { setEntries } from '../ranking/rankingEdits'
 import { clipEnd } from './clipOps'
 import { TIMELINE_ORIGIN_PX } from './scale'
 import { nearestPoint, SNAP_PIXELS, snapPoints, type SnapPoint } from './snap'
@@ -112,11 +113,7 @@ export function RanksLane({ pxPerSecond }: { pxPerSecond: number }) {
     const current = dragRef.current
     dragRef.current = null
     setDrag(null)
-    if (!current?.moved || !current.preview) return
-    const entries = current.preview
-    updateProject((p) => {
-      p.ranking.entries = entries
-    })
+    if (current?.moved && current.preview) setEntries(current.preview)
   }
 
   return (

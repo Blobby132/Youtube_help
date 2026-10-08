@@ -1,10 +1,12 @@
 // Timeline actions with undo. Each edit replaces the project's clips with the result of a
-// pure function from clipOps.ts and remembers the clips before it.
+// pure function from clipOps.ts, or changes the ranking, and remembers both as they were before
+// it: Undo and Redo cover clip and ranking edits alike, in the order they were made.
+import { produce } from 'immer'
 import { create } from 'zustand'
 import type { LibraryItem } from '../../lib/api'
 import { newId } from '../../lib/ids'
 import { useProjectStore, updateProject } from '../../state/project/store'
-import type { TimelineClip } from '../../state/project/types'
+import type { Ranking, TimelineClip } from '../../state/project/types'
 import { setUi, useUi } from '../../state/ui'
 import { useLibrary } from '../library/libraryStore'
 import {
@@ -22,9 +24,16 @@ const HISTORY_LIMIT = 100
 /** Slider drags arrive as many small edits; within this window they undo as one. */
 const MERGE_MS = 1200
 
+/** What one undo step brings back. The ranking is in it as a whole, so every ranking change
+ * has to go through editRanking: Undo would silently revert one that didn't. */
+export interface TimelineSnapshot {
+  clips: TimelineClip[]
+  ranking: Ranking
+}
+
 interface HistoryState {
-  past: TimelineClip[][]
-  future: TimelineClip[][]
+  past: TimelineSnapshot[]
+  future: TimelineSnapshot[]
   /** Shown in the toolbar for a few seconds after an edit that needs explaining. */
   notice: string | null
 }
@@ -45,29 +54,50 @@ useProjectStore.subscribe((state) => {
 
 const currentClips = () => useProjectStore.getState().project.clips
 
-function setClips(clips: TimelineClip[]) {
+function snapshot(): TimelineSnapshot {
+  const { clips, ranking } = useProjectStore.getState().project
+  return { clips, ranking }
+}
+
+function restore({ clips, ranking }: TimelineSnapshot) {
   updateProject((p) => {
     p.clips = clips
+    p.ranking = ranking
   })
   const selected = useUi.getState().selectedClipId
   if (selected && !clips.some((c) => c.id === selected)) setUi({ selectedClipId: null })
 }
 
 /**
- * Applies a change to the clips (return null for "nothing to do"). Edits sharing `mergeKey`
- * in quick succession (e.g. dragging the crop slider) undo together.
+ * Records `before` as an undo step for the edit about to be applied. Edits sharing `mergeKey`
+ * in quick succession (e.g. dragging the crop slider, typing a label) undo together.
  */
-export function editClips(change: (clips: readonly TimelineClip[]) => TimelineClip[] | null, mergeKey?: string): boolean {
-  const before = currentClips()
-  const after = change(before)
-  if (!after || JSON.stringify(after) === JSON.stringify(before)) return false
+function remember(before: TimelineSnapshot, mergeKey?: string) {
   const now = Date.now()
   const merge = mergeKey !== undefined && lastMerge?.key === mergeKey && now - lastMerge.at < MERGE_MS
   lastMerge = mergeKey === undefined ? null : { key: mergeKey, at: now }
   if (!merge) {
     useTimelineHistory.setState((s) => ({ past: [...s.past.slice(-HISTORY_LIMIT + 1), before], future: [] }))
   }
-  setClips(after)
+}
+
+/** Applies a change to the clips (return null for "nothing to do"). See remember for `mergeKey`. */
+export function editClips(change: (clips: readonly TimelineClip[]) => TimelineClip[] | null, mergeKey?: string): boolean {
+  const before = snapshot()
+  const after = change(before.clips)
+  if (!after || JSON.stringify(after) === JSON.stringify(before.clips)) return false
+  remember(before, mergeKey)
+  restore({ ...before, clips: after })
+  return true
+}
+
+/** Changes the ranking with an Immer recipe. See remember for `mergeKey`. */
+export function editRanking(recipe: (draft: Ranking) => void, mergeKey?: string): boolean {
+  const before = snapshot()
+  const after = produce(before.ranking, recipe)
+  if (JSON.stringify(after) === JSON.stringify(before.ranking)) return false
+  remember(before, mergeKey)
+  restore({ ...before, ranking: after })
   return true
 }
 
@@ -76,8 +106,8 @@ export function undo() {
   const previous = past[past.length - 1]
   if (!previous) return
   lastMerge = null
-  useTimelineHistory.setState({ past: past.slice(0, -1), future: [currentClips(), ...future] })
-  setClips(previous)
+  useTimelineHistory.setState({ past: past.slice(0, -1), future: [snapshot(), ...future] })
+  restore(previous)
 }
 
 export function redo() {
@@ -85,8 +115,8 @@ export function redo() {
   const next = future[0]
   if (!next) return
   lastMerge = null
-  useTimelineHistory.setState({ past: [...past, currentClips()], future: future.slice(1) })
-  setClips(next)
+  useTimelineHistory.setState({ past: [...past, snapshot()], future: future.slice(1) })
+  restore(next)
 }
 
 export function showNotice(notice: string | null) {

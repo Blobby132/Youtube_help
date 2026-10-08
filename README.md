@@ -332,7 +332,8 @@ the timeline (after asking); **Undo** brings them back.
 - **Split** cuts the clip at the playhead, **Delete** (or the Delete key) removes the selected
   clip, and **Fit to voiceover** closes every gap and ends the last clip with the voiceover. It
   keeps your cuts: each clip runs until the next one starts, using more of its footage, and
-  plays slower if it runs out. **Undo/Redo** (Ctrl+Z, Ctrl+Shift+Z) cover all clip edits.
+  plays slower if it runs out. **Undo/Redo** (Ctrl+Z, Ctrl+Shift+Z) cover all clip edits and
+  every ranking change, in the order you made them.
 - **9:16 crop.** A clip fills the 1080×1920 frame and is cropped. Select a clip and use
   **Crop position** in the **Clip settings** card beside the preview (left–right for wide
   clips, top–bottom for tall ones), or drag the picture in the preview. On a narrow window the
@@ -371,6 +372,11 @@ there is one.
   playhead (from the captions), or else a few seconds from the playhead. Entries never overlap,
   so a new entry is trimmed to the time no other entry uses. **Set time** on an entry does the
   same for an existing one.
+- **Type an entry's start and end** in its two time fields, as minutes and seconds (`0:03.04`)
+  or as seconds (`3.04`). **Enter** applies (so does leaving the field) and **Escape** cancels.
+  A time that isn't one, an end before the start, an entry shorter than 0.2 s or a time that
+  overlaps another entry changes nothing and says why under the entry. To move an entry later
+  past its own end, change the end first.
 - **Drag an entry's edges** on the **Ranks** track to change when it shows. Edges snap to words,
   caption changes, clip edges, the playhead and the ends of the video (hold Alt to place freely),
   and stop at the next entry. Click an entry to open the Ranking tab.
@@ -381,6 +387,11 @@ there is one.
   the number and the label.
 - **Warnings** in the list: an entry without a time yet, and an entry that starts before the one
   above it, so the count would run out of order.
+- **Undo/Redo** (the timeline's buttons, Ctrl+Z and Ctrl+Shift+Z) cover every ranking change:
+  adding, removing and reordering entries, labels (typing undoes as one step), times (typed or
+  dragged), the count's direction, turning it on or off and the look. Ctrl+Z works anywhere in
+  the Ranking tab, the label fields included; in a time field you're typing in, it undoes the
+  typing first.
 
 Entries keep their times whatever happens to the clips: Auto-fill, Delete, Split, Fit to
 voiceover and moving clips never change them. Projects saved before this linked each entry to a
@@ -429,15 +440,17 @@ saving finished shots to the library, failures, cancelling, a lost job, an unrea
 and picking up jobs again after a restart.
 `npm run test:frontend` runs the frontend unit tests (caption grouping and layout, the
 out-of-date check, every timeline edit, snapping, undo, the 9:16 crop and Fit inside, the title
-and ranking layout, rank numbers, warnings and time ranges, upgrading older projects (clip links to times), Auto-fill timing and
-the ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
+and ranking layout, rank numbers, warnings and time ranges, typed times, undo and redo of every
+ranking change, upgrading older projects (clip links to times), Auto-fill timing and the
+ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
 fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
 splitting, the crop control, Pexels and Pixabay results, the source switch, the rate-limit
 countdown, imports with the AI flag, and Generate shot (the dialog, the jobs list across a
 reload, cancelling, and an AI clip's Copy prompt, Generate again and Final quality), Fit inside
 over a solid and a blurred background, the title bar and its timing, and ranking entries (timing
-from the selection and the sentence, dragging and snapping edges, clip edits leaving them alone,
-reordering, warnings, the overlay in the preview, saving) (on a new machine, first
+from the selection and the sentence, dragging and snapping edges, typed times and their
+messages, Undo and Redo of ranking edits from the buttons and the keyboard, clip edits leaving
+them alone, reordering, warnings, the overlay in the preview, saving) (on a new machine, first
 run `npx playwright install chromium` once inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
 the frontend.
@@ -503,4 +516,5 @@ data/                   app-wide data, e.g. the pronunciation list (not committe
 - **A clip on the timeline says "Missing clip"**: it was deleted from the library. Delete it
   from the timeline or drop another clip in its place.
 - **Keyboard**: Space plays/pauses the preview, Delete removes the selected clip, Ctrl+Z and
-  Ctrl+Shift+Z undo and redo clip edits (when you aren't typing).
+  Ctrl+Shift+Z (or Ctrl+Y) undo and redo clip and ranking edits. In a text field outside the
+  Ranking tab they undo your typing instead.

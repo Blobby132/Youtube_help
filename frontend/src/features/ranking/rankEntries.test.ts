@@ -13,6 +13,7 @@ import {
   resizeEntry,
   sentenceAt,
   sentences,
+  setEntryEdge,
   timesFromClipLinks,
 } from './rankEntries'
 
@@ -178,6 +179,51 @@ describe('resizeEntry', () => {
 
   it('leaves entries without a time alone', () => {
     expect(resizeEntry(list, 'r2', 'end', 5)).toEqual(list)
+  })
+})
+
+describe('setEntryEdge', () => {
+  // Counting down: r0 is #3 (1-2 s), r1 #2 (3-4 s), r2 #1 without a time.
+  const three = ranking([{ start: 1, end: 2 }, { start: 3, end: 4 }, null])
+  const set = (id: string, edge: 'start' | 'end', seconds: number) => {
+    const result = setEntryEdge(three, id, edge, seconds)
+    return 'error' in result ? result.error : times(result.entries)
+  }
+
+  it('sets one edge to the typed time and keeps the other', () => {
+    expect(set('r0', 'start', 0.5)).toEqual([[0.5, 2], [3, 4], null])
+    expect(set('r0', 'end', 3)).toEqual([[1, 3], [3, 4], null])
+    expect(set('r1', 'start', 2)).toEqual([[1, 2], [2, 4], null])
+    expect(set('r1', 'end', 99.123456)).toEqual([[1, 2], [3, 99.1235], null])
+  })
+
+  it('refuses an end before the start, saying which edge to change first', () => {
+    expect(set('r0', 'end', 0.5)).toBe('The end has to be after the start (0:01.00). To move the entry earlier, change its start first.')
+    expect(set('r0', 'end', 1)).toMatch(/^The end has to be after the start/)
+    expect(set('r1', 'start', 5)).toBe('The start has to be before the end (0:04.00). To move the entry later, change its end first.')
+  })
+
+  it('refuses an entry shorter than MIN_RANK', () => {
+    expect(set('r0', 'end', 1.1)).toBe(`An entry has to be at least ${MIN_RANK} s long.`)
+  })
+
+  it('refuses a time that overlaps another entry, naming it, instead of stopping short like a drag', () => {
+    expect(set('r0', 'end', 3.5)).toBe('That overlaps #2 Item 1 (0:03.00–0:04.00). Entries can’t overlap.')
+    expect(set('r1', 'start', 0)).toBe('That overlaps #3 Item 0 (0:01.00–0:02.00). Entries can’t overlap.')
+    // Covering the other entry whole counts too.
+    expect(set('r1', 'start', 0.5)).toMatch(/^That overlaps #3 Item 0/)
+    const unlabelled = ranking([{ start: 1, end: 2 }, { start: 3, end: 4 }], { direction: 'up' })
+    unlabelled.entries[1].label = '  '
+    expect(setEntryEdge(unlabelled, 'r0', 'end', 3.2)).toEqual({ error: 'That overlaps #2 (0:03.00–0:04.00). Entries can’t overlap.' })
+  })
+
+  it('allows touching the neighbouring entry', () => {
+    expect(set('r0', 'end', 3)).toEqual([[1, 3], [3, 4], null])
+    expect(set('r1', 'start', 2)).toEqual([[1, 2], [2, 4], null])
+  })
+
+  it('needs the entry to have a time already', () => {
+    expect(set('r2', 'start', 5)).toBe('This entry has no time yet: click Set time first.')
   })
 })
 
