@@ -27,7 +27,7 @@ export function captionsOutOfDate(project: Project): boolean {
 
 /**
  * Timeline clips whose library item is flagged AI-generated. The top bar shows this now; the
- * export warning (Stage 6) asks the backend's twin, app/library/usage.py `ai_clips`.
+ * finished render's reminder asks the backend's twin, app/library/usage.py `ai_clips`.
  */
 export function aiClips(clips: readonly TimelineClip[], items: readonly LibraryItem[]): TimelineClip[] {
   const ai = new Set(items.filter((item) => item.aiGenerated).map((item) => item.id))

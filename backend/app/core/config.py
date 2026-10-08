@@ -42,6 +42,8 @@ class Settings:
     # ComfyUI for "Generate shot": its address, and the workflow exported in API format.
     comfyui_url: str = "http://127.0.0.1:8188"
     comfy_workflow: Path = REPO_ROOT / "comfy" / "ltx_t2v_api.json"
+    # Finished videos: exports/<project name>/<project name>.mp4
+    exports_dir: Path = REPO_ROOT / "exports"
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -67,4 +69,5 @@ def get_settings() -> Settings:
         pixabay_api_key=pixabay_key or None,
         comfyui_url=(os.getenv("COMFYUI_URL") or "").strip() or "http://127.0.0.1:8188",
         comfy_workflow=_path_from_env("COMFYUI_WORKFLOW", REPO_ROOT / "comfy" / "ltx_t2v_api.json"),
+        exports_dir=_path_from_env("EXPORTS_DIR", REPO_ROOT / "exports"),
     )

@@ -13,7 +13,7 @@ class Font:
     id: str
     name: str
     file: str
-    # Family name inside the file, used by the FFmpeg/libass render.
+    # Family name inside the file.
     family: str
     bold: bool = False
 

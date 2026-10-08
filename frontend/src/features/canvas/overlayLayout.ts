@@ -1,5 +1,6 @@
 // Where the title and the ranking overlay sit on the 1080x1920 frame. Like captionLayout.ts,
-// these are the numbers the FFmpeg render (stage 6) places them with. Text is measured by
+// these numbers place the text in the preview and in the final render, which draws its
+// overlays with the same code (../preview/frameOverlays.ts). Text is measured by
 // the caller (with the bundled font), so the layout itself is plain arithmetic.
 import type { RankStyle, TitleSettings } from '../../state/project/types'
 import { LINE_HEIGHT, lineWidth, wrapLines } from '../preview/captionLayout'

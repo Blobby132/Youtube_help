@@ -1,5 +1,5 @@
-// Where and how captions sit on the 1080x1920 frame. Shared numbers so the FFmpeg render
-// (stage 6) can place text the same way. The title and ranking overlays wrap with the same
+// Where and how captions sit on the 1080x1920 frame. The final render draws its captions
+// with the preview's own code (frameOverlays.ts), so these numbers place both. The title and ranking overlays wrap with the same
 // rule (see ../canvas/overlayLayout.ts).
 import type { CaptionPosition } from '../../state/project/types'
 

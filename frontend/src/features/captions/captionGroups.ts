@@ -1,5 +1,5 @@
 // How timed words become on-screen captions. Kept free of React and canvas code so the
-// final render (stage 6) can follow exactly the same rules.
+// final render (which draws its text with the preview code) follows exactly the same rules.
 import type { CaptionWord } from '../../state/project/types'
 
 export interface CaptionGroup {
@@ -52,8 +52,8 @@ export function groupCaptions(words: CaptionWord[], perCaption: number): Caption
   return groups
 }
 
-/** The caption showing at `time`, by binary search. */
-export function groupAt(groups: CaptionGroup[], time: number): CaptionGroup | null {
+/** Index of the caption showing at `time` (-1 for none), by binary search. */
+export function groupIndexAt(groups: CaptionGroup[], time: number): number {
   let low = 0
   let high = groups.length - 1
   while (low <= high) {
@@ -61,9 +61,14 @@ export function groupAt(groups: CaptionGroup[], time: number): CaptionGroup | nu
     const group = groups[mid]
     if (time < group.start) high = mid - 1
     else if (time >= group.end) low = mid + 1
-    else return group
+    else return mid
   }
-  return null
+  return -1
+}
+
+/** The caption showing at `time`. */
+export function groupAt(groups: CaptionGroup[], time: number): CaptionGroup | null {
+  return groups[groupIndexAt(groups, time)] ?? null
 }
 
 /** Index of the word being spoken: the last one that has started. */

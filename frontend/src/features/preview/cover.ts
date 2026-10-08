@@ -1,8 +1,8 @@
 // Fitting a clip to the 9:16 frame. "Fill" (the default) scales it until it fills the frame,
 // then crops what sticks out: `cropX`/`cropY` choose which part stays (0 = left/top,
 // 0.5 = centre, 1 = right/bottom). "Fit inside" scales it until the whole picture fits and
-// centres it; the canvas background fills the rest. The final render (Stage 6) uses the same
-// numbers.
+// centres it; the canvas background fills the rest. The final render uses the same
+// numbers (backend/app/render/plan.py cover_rect and inside_rect).
 import type { ClipFit } from '../../state/project/types'
 
 export interface SourceRect {

@@ -8,6 +8,8 @@ import { useUi } from '../../state/ui'
 import { AiIndicator } from '../library/AiIndicator'
 import { useLibrary } from '../library/libraryStore'
 import { ProjectMenu } from '../projects/ProjectMenu'
+import { RenderDialog } from '../render/RenderDialog'
+import { isRendering, openRenderDialog, useRender } from '../render/renderStore'
 import styles from './TopBar.module.css'
 
 const BACKEND_LABEL = {
@@ -24,6 +26,9 @@ export function TopBar() {
   const clips = useProject((p) => p.clips)
   const items = useLibrary((s) => s.items)
   const aiCount = aiClips(clips, items).length
+  const renderStage = useRender((s) => s.stage)
+  const renderProgress = useRender((s) => s.progress)
+  const rendering = isRendering(renderStage)
 
   return (
     <header className={styles.bar}>
@@ -62,11 +67,19 @@ export function TopBar() {
         <Button
           variant="primary"
           icon={Clapperboard}
-          disabled={!renderable}
-          title={renderable ? 'Render the final MP4' : 'Add a voiceover and at least one clip to render'}
+          disabled={!renderable && !rendering}
+          title={
+            rendering
+              ? 'Show the render'
+              : renderable
+                ? 'Render the final MP4'
+                : 'Add a voiceover and at least one clip to render'
+          }
+          onClick={openRenderDialog}
         >
-          Render
+          {rendering ? `Rendering ${Math.round(renderProgress * 100)}%` : 'Render'}
         </Button>
+        <RenderDialog />
       </div>
     </header>
   )
