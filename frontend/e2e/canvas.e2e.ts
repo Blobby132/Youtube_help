@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { fakeBackend, libraryItem, wideItem } from './fakeBackend'
 
 const SCRIPT = 'Every airplane window has a tiny hole in it. It keeps the window from fogging up.'
@@ -38,6 +38,13 @@ async function makeVoiceover(page: Page) {
   await page.getByRole('textbox', { name: 'Script' }).fill(SCRIPT)
   await page.getByRole('button', { name: 'Generate AI read' }).click()
   await expect(page.getByText('AI read · Heart')).toBeVisible()
+}
+
+/** Checks an entry's start and end fields in the Ranking tab, given as "0:00.00–0:02.00". */
+async function expectTime(entry: Locator, range: string) {
+  const [start, end] = range.split('–')
+  await expect(entry.getByRole('textbox', { name: /^Start of #/ })).toHaveValue(start)
+  await expect(entry.getByRole('textbox', { name: /^End of #/ })).toHaveValue(end)
 }
 
 const seek = (page: Page, seconds: number) => page.getByRole('slider', { name: 'Seek' }).fill(String(seconds))
@@ -151,7 +158,7 @@ test('ranking entries have their own times: added from the selection or sentence
   await expect(left.getByLabel('Label of #1')).toBeFocused()
   await left.getByLabel('Label of #1').fill('Boeing 747')
   const entries = left.getByTestId('rank-entry')
-  await expect(entries.nth(0).getByTestId('rank-time')).toHaveText('0:00.00–0:02.00')
+  await expectTime(entries.nth(0), '0:00.00–0:02.00')
 
   // Alpha is already used, so the next one takes the sentence under the playhead.
   await seek(page, 3.5)
@@ -160,7 +167,7 @@ test('ranking entries have their own times: added from the selection or sentence
   await expect(entries).toHaveCount(2)
   await expect(left.getByRole('radio', { name: 'Count down 2→1' })).toBeVisible()
   await expect(left.getByLabel('Label of #2')).toHaveValue('Boeing 747')
-  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.70–0:04.78')
+  await expectTime(entries.nth(1), '0:02.70–0:04.78')
   const blocks = page.getByTestId('rank-block')
   await expect(blocks).toHaveText(['#2 Boeing 747', '#1 Airbus A380'])
 
@@ -178,7 +185,7 @@ test('ranking entries have their own times: added from the selection or sentence
   await page.mouse.down()
   await page.mouse.move(box.x - 2 * pxPerSecond, box.y + box.height / 2, { steps: 6 })
   await page.mouse.up()
-  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.00–0:04.78')
+  await expectTime(entries.nth(1), '0:02.00–0:04.78')
 
   // Its end edge snaps to the end of Bravo (a clip edge) at 4 s.
   box = (await blocks.nth(1).boundingBox())!
@@ -189,7 +196,7 @@ test('ranking entries have their own times: added from the selection or sentence
   await expect(snapLine).toHaveText('clip')
   await page.mouse.up()
   await expect(snapLine).toHaveCount(0)
-  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.00–0:04.00')
+  await expectTime(entries.nth(1), '0:02.00–0:04.00')
 
   // Splitting and deleting clips leaves the entries' times alone.
   await seek(page, 1)
@@ -198,12 +205,12 @@ test('ranking entries have their own times: added from the selection or sentence
   await page.getByRole('button', { name: 'Delete', exact: true }).click()
   await expect(page.getByTestId('timeline-clip')).toHaveCount(2)
   await expect(blocks).toHaveText(['#2 Boeing 747', '#1 Airbus A380'])
-  await expect(entries.nth(0).getByTestId('rank-time')).toHaveText('0:00.00–0:02.00')
-  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.00–0:04.00')
+  await expectTime(entries.nth(0), '0:00.00–0:02.00')
+  await expectTime(entries.nth(1), '0:02.00–0:04.00')
   await page.getByRole('button', { name: 'Undo' }).click()
   await page.getByRole('button', { name: 'Undo' }).click()
   await expect(page.getByTestId('timeline-clip')).toHaveCount(2)
-  await expect(entries.nth(1).getByTestId('rank-time')).toHaveText('0:02.00–0:04.00')
+  await expectTime(entries.nth(1), '0:02.00–0:04.00')
 
   // Moving Airbus's entry first puts the count out of order.
   await left.getByRole('button', { name: 'Move #1 up' }).click()
@@ -226,9 +233,139 @@ test('ranking entries have their own times: added from the selection or sentence
   await page.reload()
   await page.getByRole('complementary', { name: 'Script, media and ranking' }).getByRole('tab', { name: 'Ranking' }).click()
   await expect(page.getByTestId('rank-block')).toHaveText(['#1 Boeing 747', '#2 Airbus A380'])
-  await expect(page.getByTestId('rank-time')).toHaveText(['0:00.00–0:02.00', '0:02.00–0:04.00'])
+  await expectTime(page.getByTestId('rank-entry').nth(0), '0:00.00–0:02.00')
+  await expectTime(page.getByTestId('rank-entry').nth(1), '0:02.00–0:04.00')
 
   // Removing an entry renumbers the rest.
   await page.getByRole('button', { name: 'Remove #1' }).click()
   await expect(page.getByTestId('rank-block')).toHaveText(['#1 Airbus A380'])
+})
+
+test('Undo and Redo cover every ranking edit, and times can be typed', async ({ page }) => {
+  await fakeBackend(page, { library: [] })
+  await page.goto('/')
+  await expect(page.locator('[data-state="saved"]')).toBeVisible()
+  const left = page.getByRole('complementary', { name: 'Script, media and ranking' })
+  await left.getByRole('tab', { name: 'Ranking' }).click()
+  const entries = left.getByTestId('rank-entry')
+  const addButton = left.getByRole('button', { name: 'Add entry' })
+  const undoButton = page.getByRole('button', { name: 'Undo' })
+  const redoButton = page.getByRole('button', { name: 'Redo' })
+
+  // Undo removes an added entry, from the button...
+  await addButton.click()
+  await expect(entries).toHaveCount(1)
+  await undoButton.click()
+  await expect(entries).toHaveCount(0)
+  await redoButton.click()
+  await expect(entries).toHaveCount(1)
+  await undoButton.click()
+  await expect(entries).toHaveCount(0)
+
+  // ...and from Ctrl+Z, though the new entry's label has the focus.
+  await addButton.click()
+  await expect(left.getByLabel('Label of #1')).toBeFocused()
+  await page.keyboard.press('Control+z')
+  await expect(entries).toHaveCount(0)
+  await page.keyboard.press('Control+Shift+z')
+  await expect(entries).toHaveCount(1)
+  await expectTime(entries.nth(0), '0:00.00–0:03.00')
+
+  // Typing a label undoes as one step, Ctrl+Z in the label included.
+  const label = left.getByLabel('Label of #1')
+  await label.pressSequentially('Boeing 747')
+  await page.keyboard.press('Control+z')
+  await expect(label).toHaveValue('')
+  await expect(entries).toHaveCount(1)
+  await page.keyboard.press('Control+y')
+  await expect(label).toHaveValue('Boeing 747')
+
+  // A second entry goes right after the first: #2 then #1, counting down.
+  await addButton.click()
+  await expect(entries).toHaveCount(2)
+  await expectTime(entries.nth(1), '0:03.00–0:06.00')
+
+  // Typed times: Enter applies, as seconds or as minutes and seconds.
+  const field = (index: number, edge: 'Start' | 'End') => entries.nth(index).getByRole('textbox', { name: new RegExp(`^${edge} of #`) })
+  const message = left.getByTestId('rank-time-message')
+  await field(0, 'End').fill('2.5')
+  await field(0, 'End').press('Enter')
+  await expectTime(entries.nth(0), '0:00.00–0:02.50')
+  await field(0, 'Start').fill('0:00.50')
+  await field(0, 'Start').press('Enter')
+  await expectTime(entries.nth(0), '0:00.50–0:02.50')
+  await expect(message).toHaveCount(0)
+
+  // Escape cancels.
+  await field(0, 'Start').fill('1')
+  await field(0, 'Start').press('Escape')
+  await expect(field(0, 'Start')).toHaveValue('0:00.50')
+
+  // Ctrl+Z in the field (with nothing typed) undoes the last typed time.
+  await page.keyboard.press('Control+z')
+  await expectTime(entries.nth(0), '0:00.00–0:02.50')
+  await redoButton.click()
+  await expectTime(entries.nth(0), '0:00.50–0:02.50')
+
+  // A time that can't be used shows why and changes nothing; the text stays to fix it.
+  await field(0, 'End').fill('abc')
+  await field(0, 'End').press('Enter')
+  await expect(message).toHaveText('“abc” isn’t a time. Type minutes and seconds like 0:03.04, or seconds like 3.04.')
+  await expect(field(0, 'End')).toHaveValue('abc')
+  await field(0, 'End').press('Escape')
+  await expect(message).toHaveCount(0)
+  await expectTime(entries.nth(0), '0:00.50–0:02.50')
+
+  await field(0, 'Start').fill('0:05')
+  await field(0, 'Start').press('Enter')
+  await expect(message).toHaveText('The start has to be before the end (0:02.50). To move the entry later, change its end first.')
+  await field(0, 'Start').press('Escape')
+
+  await field(0, 'End').fill('4')
+  await field(0, 'End').press('Enter')
+  await expect(message).toHaveText('That overlaps #1 (0:03.00–0:06.00). Entries can’t overlap.')
+  await field(0, 'End').press('Escape')
+
+  await field(1, 'End').fill('0:02')
+  await field(1, 'End').press('Enter')
+  await expect(message).toHaveText('The end has to be after the start (0:03.00). To move the entry earlier, change its start first.')
+  await field(1, 'End').press('Escape')
+  await expectTime(entries.nth(0), '0:00.50–0:02.50')
+  await expectTime(entries.nth(1), '0:03.00–0:06.00')
+
+  // Leaving a field applies what was typed.
+  await field(1, 'End').fill('7')
+  await left.getByRole('heading', { name: 'Entries' }).click()
+  await expectTime(entries.nth(1), '0:03.00–0:07.00')
+  await undoButton.click()
+  await expectTime(entries.nth(1), '0:03.00–0:06.00')
+
+  // Dragging an edge on the Ranks lane undoes too.
+  const block = page.getByTestId('rank-block').nth(1)
+  const box = (await block.boundingBox())!
+  await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(field(1, 'End')).not.toHaveValue('0:06.00')
+  const dragged = await field(1, 'End').inputValue()
+  await undoButton.click()
+  await expect(field(1, 'End')).toHaveValue('0:06.00')
+  await redoButton.click()
+  await expect(field(1, 'End')).toHaveValue(dragged)
+
+  // Reordering, the count's direction and removing undo too.
+  await left.getByRole('button', { name: 'Move #1 up' }).click()
+  await expect(left.getByLabel('Label of #1')).toHaveValue('Boeing 747')
+  await undoButton.click()
+  await expect(left.getByLabel('Label of #2')).toHaveValue('Boeing 747')
+  await left.getByRole('radio', { name: 'Count up 1→2' }).click()
+  await expect(left.getByRole('radio', { name: 'Count up 1→2' })).toHaveAttribute('aria-checked', 'true')
+  await undoButton.click()
+  await expect(left.getByRole('radio', { name: 'Count down 2→1' })).toHaveAttribute('aria-checked', 'true')
+  await left.getByRole('button', { name: 'Remove #2' }).click()
+  await expect(entries).toHaveCount(1)
+  await undoButton.click()
+  await expect(entries).toHaveCount(2)
+  await expect(left.getByLabel('Label of #2')).toHaveValue('Boeing 747')
 })

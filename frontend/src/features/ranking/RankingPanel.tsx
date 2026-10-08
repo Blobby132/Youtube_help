@@ -10,12 +10,12 @@ import { Section } from '../../components/ui/Section'
 import { Segmented } from '../../components/ui/Segmented'
 import { Slider } from '../../components/ui/Slider'
 import { pixels } from '../../lib/format'
-import { formatTimecode } from '../../lib/time'
 import { useProject } from '../../state/project/store'
 import { playback } from '../preview/playback'
 import { orderLabel, type RankSpan, rankSpans } from './rankEntries'
-import { addEntry, removeEntry, reorderEntry, retimeEntry, setRankStyle, setRanking, updateEntry } from './rankingEdits'
+import { addEntry, removeEntry, reorderEntry, retimeEntry, setEntryTime, setRankStyle, setRanking, updateEntry } from './rankingEdits'
 import styles from './RankingPanel.module.css'
+import { TimeField } from './TimeField'
 
 const ENTRY_DRAG_TYPE = 'application/x-shorts-rank-entry'
 
@@ -42,8 +42,9 @@ export function RankingPanel() {
     if (from !== null) reorderEntry(from, to > from ? to - 1 : to)
   }
 
+  // Every change here is on the timeline's undo history, so Ctrl+Z undoes it even from a field.
   return (
-    <>
+    <div className={styles.panel} data-undo="timeline">
       <Section
         label="Ranking"
         hint="For countdown videos like “Top 5 …”. Each entry shows a big rank number and its label for its own stretch of the video."
@@ -63,7 +64,7 @@ export function RankingPanel() {
       <fieldset className={styles.fieldset} disabled={!ranking.enabled}>
         <Section
           label="Entries"
-          hint="In the order they play. Drag to reorder. Drag an entry’s edges on the Ranks lane to change when it shows."
+          hint="In the order they play. Drag to reorder. Type an entry’s start and end (Enter applies, Escape cancels), or drag its edges on the Ranks lane."
         >
           {count === 0 ? (
             <EmptyState icon={ListOrdered}>
@@ -110,23 +111,27 @@ export function RankingPanel() {
             max={360}
             step={2}
             format={pixels}
-            onChange={(size) => setRankStyle({ size })}
+            onChange={(size) => setRankStyle({ size }, 'size')}
           />
           <FieldRow>
             <Field label="Number color">
               {(id) => (
-                <ColorInput id={id} value={ranking.style.numberColor} onChange={(numberColor) => setRankStyle({ numberColor })} />
+                <ColorInput
+                  id={id}
+                  value={ranking.style.numberColor}
+                  onChange={(numberColor) => setRankStyle({ numberColor }, 'numberColor')}
+                />
               )}
             </Field>
             <Field label="Label color">
               {(id) => (
-                <ColorInput id={id} value={ranking.style.labelColor} onChange={(labelColor) => setRankStyle({ labelColor })} />
+                <ColorInput id={id} value={ranking.style.labelColor} onChange={(labelColor) => setRankStyle({ labelColor }, 'labelColor')} />
               )}
             </Field>
           </FieldRow>
         </Section>
       </fieldset>
-    </>
+    </div>
   )
 }
 
@@ -159,6 +164,10 @@ function EntryRow({ span, count, focus, dragging, dropLine, ...drag }: EntryRowP
   const rowRef = useRef<HTMLLIElement>(null)
   const labelRef = useRef<HTMLInputElement>(null)
   const problem = problemText(span)
+  // Why a typed time wasn't used; it goes once the entry's time changes.
+  const [timeMessage, setTimeMessage] = useState<{ text: string; at: string } | null>(null)
+  const timeKey = time ? `${time.start}-${time.end}` : ''
+  const showMessage = (text: string | null) => setTimeMessage(text ? { text, at: timeKey } : null)
 
   useEffect(() => {
     if (focus) labelRef.current?.focus()
@@ -207,23 +216,47 @@ function EntryRow({ span, count, focus, dragging, dropLine, ...drag }: EntryRowP
           maxLength={60}
           placeholder="Label, e.g. Boeing 747"
           aria-label={`Label of #${rank}`}
-          onChange={(event) => updateEntry(entry.id, { label: event.target.value })}
+          onChange={(event) => updateEntry(entry.id, { label: event.target.value }, 'label')}
         />
         <div className={styles.timeRow}>
-          <span className={styles.time} data-testid="rank-time">
-            {time ? `${formatTimecode(time.start)}–${formatTimecode(time.end)}` : 'No time yet'}
-          </span>
+          {time ? (
+            <span className={styles.times} data-testid="rank-time">
+              <TimeField
+                label={`Start of #${rank}`}
+                value={time.start}
+                onApply={(text) => setEntryTime(entry.id, 'start', text)}
+                onMessage={showMessage}
+              />
+              <span aria-hidden>–</span>
+              <TimeField
+                label={`End of #${rank}`}
+                value={time.end}
+                onApply={(text) => setEntryTime(entry.id, 'end', text)}
+                onMessage={showMessage}
+              />
+            </span>
+          ) : (
+            <span className={styles.time} data-testid="rank-time">
+              No time yet
+            </span>
+          )}
           <button
             type="button"
             className={styles.timeButton}
             aria-label={`Set the time of #${rank}`}
-            title="Show it over the selected clip, or the sentence under the playhead"
+            title="Set time: show it over the selected clip, or the sentence under the playhead"
             onClick={() => retimeEntry(entry.id)}
           >
             <Crosshair size={11} aria-hidden />
-            Set time
+            {/* Beside the time fields there's only room for the icon. */}
+            {!time && 'Set time'}
           </button>
         </div>
+        {timeMessage?.at === timeKey && (
+          <p className={styles.problem} role="alert" data-testid="rank-time-message">
+            <TriangleAlert size={11} aria-hidden /> {timeMessage.text}
+          </p>
+        )}
         {problem && (
           <p className={styles.problem}>
             <TriangleAlert size={11} aria-hidden /> {problem}

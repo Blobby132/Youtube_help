@@ -3,6 +3,7 @@
 // preview. Each entry has its own time range: clip edits (Auto-fill, Delete, Split, moves)
 // never change it, and entries never overlap. (No imports from the timeline: project loading
 // uses this file, and clipOps uses the project defaults.)
+import { formatTimecode } from '../../lib/time'
 import type { CaptionWord, RankEntry, Ranking, TimeRange, TimelineClip } from '../../state/project/types'
 import { SENTENCE_END } from '../media/autofillPlan'
 
@@ -157,6 +158,41 @@ export function resizeEntry(entries: readonly RankEntry[], id: string, edge: 'st
     const nextStart = others.filter((o) => o.start >= end - EPS).reduce((s, o) => Math.min(s, o.start), Infinity)
     return { ...entry, time: { start, end: round(Math.max(Math.min(proposed, nextStart), start + MIN_RANK)) } }
   })
+}
+
+/**
+ * Sets one edge of an entry to a typed time. Unlike a drag, nothing is stopped short: if the
+ * entry would end before it starts, be shorter than MIN_RANK or overlap another entry, it says
+ * why instead and nothing changes.
+ */
+export function setEntryEdge(
+  ranking: Ranking,
+  id: string,
+  edge: 'start' | 'end',
+  seconds: number,
+): { entries: RankEntry[] } | { error: string } {
+  const entry = ranking.entries.find((e) => e.id === id)
+  if (!entry?.time) return { error: 'This entry has no time yet: click Set time first.' }
+  const value = round(seconds)
+  const time = edge === 'start' ? { start: value, end: entry.time.end } : { start: entry.time.start, end: value }
+  if (time.end <= time.start + EPS) {
+    return {
+      error:
+        edge === 'start'
+          ? `The start has to be before the end (${formatTimecode(time.end)}). To move the entry later, change its end first.`
+          : `The end has to be after the start (${formatTimecode(time.start)}). To move the entry earlier, change its start first.`,
+    }
+  }
+  if (time.end - time.start < MIN_RANK - EPS) return { error: `An entry has to be at least ${MIN_RANK} s long.` }
+  const clash = rankSpans(ranking)
+    .filter(({ entry: other }) => other.id !== id && other.time && time.start < other.time.end - EPS && time.end > other.time.start + EPS)
+    .sort((a, b) => a.entry.time!.start - b.entry.time!.start)[0]
+  if (clash) {
+    const other = clash.entry
+    const name = `#${clash.rank}${other.label.trim() ? ` ${other.label.trim()}` : ''}`
+    return { error: `That overlaps ${name} (${formatTimecode(other.time!.start)}–${formatTimecode(other.time!.end)}). Entries can’t overlap.` }
+  }
+  return { entries: ranking.entries.map((e) => (e.id === id ? { ...e, time } : e)) }
 }
 
 /**
