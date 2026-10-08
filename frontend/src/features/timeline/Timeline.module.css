@@ -262,6 +262,11 @@
   border-style: dashed;
 }
 
+.rankText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Toolbar: actions, the selected clip's settings, and the zoom. */
 .toolDivider {
   width: 1px;
@@ -467,7 +472,11 @@
 .selected .edgeStart,
 .selected .edgeEnd,
 .clip:hover .edgeStart,
-.clip:hover .edgeEnd {
+.clip:hover .edgeEnd,
+.rankBlock:hover .edgeStart,
+.rankBlock:hover .edgeEnd,
+.rankBlock.dragging .edgeStart,
+.rankBlock.dragging .edgeEnd {
   background: linear-gradient(to right, transparent 2px, rgb(255 255 255 / 0.85) 2px 5px, transparent 5px);
   background-size: 100% 40%;
   background-position: center;

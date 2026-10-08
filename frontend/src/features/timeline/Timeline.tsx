@@ -48,7 +48,7 @@ export function Timeline() {
   const lastClipEnd = useProject(clipsEnd)
   const hasVoiceover = useProject((p) => p.voiceover !== null)
   const hasCaptions = useProject((p) => p.captions.words.length > 0)
-  const hasRanks = useProject((p) => p.ranking.entries.some((e) => p.clips.some((c) => c.id === e.clipId)))
+  const hasRanks = useProject((p) => p.ranking.entries.some((e) => e.time !== null))
   const zoom = useUi((s) => s.zoom)
   const playhead = useUi((s) => s.playhead)
   const selectedId = useUi((s) => s.selectedClipId)

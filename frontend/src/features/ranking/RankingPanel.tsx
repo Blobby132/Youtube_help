@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, GripVertical, ListOrdered, Plus, TriangleAlert, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Crosshair, GripVertical, ListOrdered, Plus, TriangleAlert, X } from 'lucide-react'
 import type { DragEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FontSelect } from '../../components/FontSelect'
@@ -12,30 +12,20 @@ import { Slider } from '../../components/ui/Slider'
 import { pixels } from '../../lib/format'
 import { formatTimecode } from '../../lib/time'
 import { useProject } from '../../state/project/store'
-import type { TimelineClip } from '../../state/project/types'
-import { setUi } from '../../state/ui'
-import { useLibrary } from '../library/libraryStore'
 import { playback } from '../preview/playback'
-import { clipEnd, sortClips } from '../timeline/clipOps'
 import { orderLabel, type RankSpan, rankSpans } from './rankEntries'
-import { addEntry, removeEntry, reorderEntry, setRankStyle, setRanking, updateEntry } from './rankingEdits'
+import { addEntry, removeEntry, reorderEntry, retimeEntry, setRankStyle, setRanking, updateEntry } from './rankingEdits'
 import styles from './RankingPanel.module.css'
 
 const ENTRY_DRAG_TYPE = 'application/x-shorts-rank-entry'
 
 export function RankingPanel() {
   const ranking = useProject((p) => p.ranking)
-  const clips = useProject((p) => p.clips)
-  const items = useLibrary((s) => s.items)
-  const spans = useMemo(() => rankSpans(ranking, clips), [ranking, clips])
+  const spans = useMemo(() => rankSpans(ranking), [ranking])
   const [focusId, setFocusId] = useState<string | null>(null)
   const [dragging, setDragging] = useState<number | null>(null)
   const [dropAt, setDropAt] = useState<number | null>(null)
   const count = ranking.entries.length
-
-  const names = useMemo(() => new Map(items.map((item) => [item.id, item.name])), [items])
-  const sorted = useMemo(() => sortClips(clips), [clips])
-  const clipName = (clip: TimelineClip) => names.get(clip.mediaId) ?? 'Missing clip'
 
   function dropIndex(event: DragEvent<HTMLLIElement>, index: number) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -56,7 +46,7 @@ export function RankingPanel() {
     <>
       <Section
         label="Ranking"
-        hint="For countdown videos like “Top 5 …”. Each entry shows a big rank number and its label while its clip plays."
+        hint="For countdown videos like “Top 5 …”. Each entry shows a big rank number and its label for its own stretch of the video."
         action={<Checkbox checked={ranking.enabled} onChange={(enabled) => setRanking({ enabled })} />}
       >
         <Segmented
@@ -71,10 +61,13 @@ export function RankingPanel() {
       </Section>
 
       <fieldset className={styles.fieldset} disabled={!ranking.enabled}>
-        <Section label="Entries" hint="In the order they play. Drag to reorder. Each entry shows over the clip you pick.">
+        <Section
+          label="Entries"
+          hint="In the order they play. Drag to reorder. Drag an entry’s edges on the Ranks lane to change when it shows."
+        >
           {count === 0 ? (
             <EmptyState icon={ListOrdered}>
-              No entries yet. Add one per item in your ranking: select its clip on the timeline, then click Add entry.
+              No entries yet. Add one per item in your ranking: select its clip on the timeline, or put the playhead in its sentence, then click Add entry.
             </EmptyState>
           ) : (
             <ol className={styles.list} aria-label="Ranking entries">
@@ -83,9 +76,6 @@ export function RankingPanel() {
                   key={span.entry.id}
                   span={span}
                   count={count}
-                  clips={sorted}
-                  clipName={clipName}
-                  usedBy={(clipId) => spans.find((s) => s.entry.clipId === clipId && s.entry.id !== span.entry.id)?.rank ?? null}
                   focus={focusId === span.entry.id}
                   dragging={dragging === span.index}
                   dropLine={dropAt === span.index ? 'above' : dropAt === span.index + 1 && span.index === count - 1 ? 'below' : null}
@@ -143,10 +133,6 @@ export function RankingPanel() {
 interface EntryRowProps {
   span: RankSpan
   count: number
-  clips: readonly TimelineClip[]
-  clipName: (clip: TimelineClip) => string
-  /** Rank of another entry that already uses a clip. */
-  usedBy: (clipId: string) => number | null
   focus: boolean
   dragging: boolean
   dropLine: 'above' | 'below' | null
@@ -158,19 +144,18 @@ interface EntryRowProps {
 
 function problemText(span: RankSpan): string | null {
   switch (span.problem) {
-    case 'no-clip':
-      return 'Not shown yet: pick the clip it shows over.'
-    case 'clip-removed':
-      return 'Its clip is no longer on the timeline: pick another.'
+    case 'no-time':
+      return 'Not shown yet: select a clip or put the playhead in a sentence, then click Set time.'
     case 'out-of-order':
-      return `#${span.rank} plays before #${span.before}: move it up, or pick a later clip.`
+      return `#${span.rank} plays before #${span.before}: move it up, or give it a later time.`
     default:
       return null
   }
 }
 
-function EntryRow({ span, count, clips, clipName, usedBy, focus, dragging, dropLine, ...drag }: EntryRowProps) {
-  const { entry, index, rank, clip } = span
+function EntryRow({ span, count, focus, dragging, dropLine, ...drag }: EntryRowProps) {
+  const { entry, index, rank } = span
+  const { time } = entry
   const rowRef = useRef<HTMLLIElement>(null)
   const labelRef = useRef<HTMLInputElement>(null)
   const problem = problemText(span)
@@ -180,9 +165,7 @@ function EntryRow({ span, count, clips, clipName, usedBy, focus, dragging, dropL
   }, [focus])
 
   function show() {
-    if (!clip) return
-    setUi({ selectedClipId: clip.id })
-    playback.seek(clip.start + Math.min(0.5, clip.duration / 2))
+    if (time) playback.seek(time.start + Math.min(0.5, (time.end - time.start) / 2))
   }
 
   return (
@@ -210,8 +193,8 @@ function EntryRow({ span, count, clips, clipName, usedBy, focus, dragging, dropL
       <button
         type="button"
         className={styles.rank}
-        title={clip ? 'Show it in the preview' : undefined}
-        disabled={!clip}
+        title={time ? 'Show it in the preview' : undefined}
+        disabled={!time}
         onClick={show}
       >
         #{rank}
@@ -226,23 +209,21 @@ function EntryRow({ span, count, clips, clipName, usedBy, focus, dragging, dropL
           aria-label={`Label of #${rank}`}
           onChange={(event) => updateEntry(entry.id, { label: event.target.value })}
         />
-        <select
-          className={`${styles.input} ${styles.select}`}
-          value={entry.clipId ?? ''}
-          aria-label={`Clip of #${rank}`}
-          onChange={(event) => updateEntry(entry.id, { clipId: event.target.value || null })}
-        >
-          <option value="">Pick a clip…</option>
-          {entry.clipId && !clip && <option value={entry.clipId}>Removed clip</option>}
-          {clips.map((c, i) => {
-            const other = usedBy(c.id)
-            return (
-              <option key={c.id} value={c.id} disabled={other !== null}>
-                {`${i + 1}. ${formatTimecode(c.start)}–${formatTimecode(clipEnd(c))} · ${clipName(c)}${other !== null ? ` (#${other})` : ''}`}
-              </option>
-            )
-          })}
-        </select>
+        <div className={styles.timeRow}>
+          <span className={styles.time} data-testid="rank-time">
+            {time ? `${formatTimecode(time.start)}–${formatTimecode(time.end)}` : 'No time yet'}
+          </span>
+          <button
+            type="button"
+            className={styles.timeButton}
+            aria-label={`Set the time of #${rank}`}
+            title="Show it over the selected clip, or the sentence under the playhead"
+            onClick={() => retimeEntry(entry.id)}
+          >
+            <Crosshair size={11} aria-hidden />
+            Set time
+          </button>
+        </div>
         {problem && (
           <p className={styles.problem}>
             <TriangleAlert size={11} aria-hidden /> {problem}

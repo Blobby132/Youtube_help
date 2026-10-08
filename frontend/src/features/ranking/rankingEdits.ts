@@ -1,9 +1,9 @@
 // Changes to the ranking entries. They're saved with the project like every other setting.
 import { newId } from '../../lib/ids'
 import { updateProject, useProjectStore } from '../../state/project/store'
-import type { RankEntry, Ranking, RankStyle } from '../../state/project/types'
+import type { RankEntry, Ranking, RankStyle, TimeRange } from '../../state/project/types'
 import { useUi } from '../../state/ui'
-import { clipForNewEntry, moveEntry } from './rankEntries'
+import { moveEntry, rangeForNewEntry } from './rankEntries'
 
 export function setRanking(patch: Partial<Omit<Ranking, 'entries' | 'style'>>) {
   updateProject((p) => {
@@ -17,15 +17,26 @@ export function setRankStyle(patch: Partial<RankStyle>) {
   })
 }
 
-/** Adds an entry at the end, linked to the clip clipForNewEntry picks. Returns its id. */
-export function addEntry(): string {
-  const { clips, ranking } = useProjectStore.getState().project
+/** Where rangeForNewEntry puts an entry now: the selected clip, or the sentence under the playhead. */
+function defaultRange(excludeId?: string): TimeRange | null {
+  const { clips, ranking, captions } = useProjectStore.getState().project
   const { selectedClipId, playhead } = useUi.getState()
-  const entry: RankEntry = { id: newId('r'), label: '', clipId: clipForNewEntry(clips, ranking.entries, selectedClipId, playhead) }
+  return rangeForNewEntry({ entries: ranking.entries, clips, words: captions.words, selectedClipId, playhead, excludeId })
+}
+
+/** Adds an entry at the end, timed by rangeForNewEntry. Returns its id. */
+export function addEntry(): string {
+  const entry: RankEntry = { id: newId('r'), label: '', time: defaultRange() }
   updateProject((p) => {
     p.ranking.entries.push(entry)
   })
   return entry.id
+}
+
+/** Gives an entry the time a new entry would get (for one that has none yet, or to move it). */
+export function retimeEntry(id: string) {
+  const time = defaultRange(id)
+  if (time) updateEntry(id, { time })
 }
 
 export function updateEntry(id: string, patch: Partial<Omit<RankEntry, 'id'>>) {
