@@ -11,6 +11,7 @@ import { setUi, useUi } from '../../state/ui'
 import { playback } from '../preview/playback'
 import { CaptionsLane } from './CaptionsLane'
 import { ClipSettings } from './ClipSettings'
+import { RanksLane } from './RanksLane'
 import { Ruler } from './Ruler'
 import { TIMELINE_ORIGIN_PX, pixelsPerSecond } from './scale'
 import styles from './Timeline.module.css'
@@ -47,6 +48,7 @@ export function Timeline() {
   const lastClipEnd = useProject(clipsEnd)
   const hasVoiceover = useProject((p) => p.voiceover !== null)
   const hasCaptions = useProject((p) => p.captions.words.length > 0)
+  const hasRanks = useProject((p) => p.ranking.entries.some((e) => p.clips.some((c) => c.id === e.clipId)))
   const zoom = useUi((s) => s.zoom)
   const playhead = useUi((s) => s.playhead)
   const selectedId = useUi((s) => s.selectedClipId)
@@ -196,6 +198,8 @@ export function Timeline() {
                   <VoiceoverLane pxPerSecond={pxPerSecond} />
                 ) : id === 'captions' && hasCaptions ? (
                   <CaptionsLane pxPerSecond={pxPerSecond} />
+                ) : id === 'ranks' && hasRanks ? (
+                  <RanksLane pxPerSecond={pxPerSecond} />
                 ) : (
                   <span className={styles.trackEmpty}>{empty}</span>
                 )}

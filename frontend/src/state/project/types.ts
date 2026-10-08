@@ -34,6 +34,8 @@ export interface Mix {
   music: MusicTrack | null
 }
 
+export type ClipFit = 'fill' | 'inside'
+
 /**
  * A clip on the video track. Clips sit at their own start time (gaps between them stay
  * empty) and never overlap. Its media lives in the shared library (see lib/api.ts
@@ -54,6 +56,9 @@ export interface TimelineClip {
   /** Which part of the picture stays when it's cropped to 9:16: 0 = left/top, 0.5 = centre, 1 = right/bottom. */
   cropX: number
   cropY: number
+  /** 'fill' covers the 9:16 frame and crops (cropX/cropY); 'inside' shows the whole picture
+   * with the canvas background around it. */
+  fit: ClipFit
   /** Clip audio is muted unless this is on; then it plays under the voiceover at `volume`. */
   keepAudio: boolean
   volume: number
@@ -93,9 +98,11 @@ export interface Captions {
 
 export type BackgroundMode = 'color' | 'blur'
 
+/** What fills the frame around a clip set to "Fit inside". */
 export interface CanvasBackground {
   mode: BackgroundMode
   color: string
+  /** Gaussian blur of the clip behind, in frame pixels (the CSS blur() radius, FFmpeg gblur sigma). */
   blur: number
 }
 
@@ -120,14 +127,25 @@ export interface Canvas {
 export interface RankEntry {
   id: string
   label: string
-  /** Timeline clip this entry is shown over. */
+  /** Timeline clip this entry is shown over (kept when the clip is removed, so Undo brings it back). */
   clipId: string | null
+}
+
+export interface RankStyle {
+  fontId: string
+  /** Height of the rank number in frame pixels; the label is about a third of it. */
+  size: number
+  numberColor: string
+  labelColor: string
 }
 
 export interface Ranking {
   enabled: boolean
+  /** 'down': the first entry is #N and the last #1; 'up': the first is #1. */
   direction: 'down' | 'up'
+  /** In the order they play. */
   entries: RankEntry[]
+  style: RankStyle
 }
 
 export interface Project {

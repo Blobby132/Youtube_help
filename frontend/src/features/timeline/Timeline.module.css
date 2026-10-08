@@ -238,6 +238,30 @@
   opacity: 0.4;
 }
 
+.rankBlock {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, #ffd60a 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, #ffd60a 14%, #1e1e24);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #f4e7a6;
+  cursor: pointer;
+}
+
+.rankWarning {
+  border-color: var(--warning);
+  border-style: dashed;
+}
+
 /* Toolbar: actions, the selected clip's settings, and the zoom. */
 .toolDivider {
   width: 1px;

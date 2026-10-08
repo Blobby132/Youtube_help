@@ -11,7 +11,7 @@ import { useLibrary } from '../library/libraryStore'
 import { ClipSettings } from '../timeline/ClipSettings'
 import { clipAt } from '../timeline/clipOps'
 import { updateClip } from '../timeline/timelineEdits'
-import { cropAxis } from './cover'
+import { clipCropAxis } from './cover'
 import { playback } from './playback'
 import styles from './PreviewPlayer.module.css'
 import { usePlaybackSync } from './usePlaybackSync'
@@ -59,12 +59,12 @@ export function PreviewPlayer() {
   const active = useProject((p) => clipAt(p.clips, playhead))
   const item = useLibrary((s) => (active ? s.items.find((i) => i.id === active.mediaId) : undefined))
   const libraryReady = useLibrary((s) => s.status === 'ready')
-  const axis = item ? cropAxis(item.width, item.height, CANVAS.width, CANVAS.height) : null
+  const axis = active && item ? clipCropAxis(active.fit, item.width, item.height, CANVAS.width, CANVAS.height) : null
   const inGap = hasClips && !active && playhead < duration - 0.01
 
   const seek = (time: number) => playback.seek(time)
 
-  /** Dragging the picture moves the crop of a clip that doesn't fill 9:16 exactly. */
+  /** Dragging the picture moves the crop of a filled clip that isn't exactly 9:16. */
   function startPan(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !active || !item || !axis) return
     const rect = event.currentTarget.getBoundingClientRect()

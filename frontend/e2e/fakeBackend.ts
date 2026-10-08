@@ -11,6 +11,10 @@ const fontFile = readFileSync(path.join(here, '../../backend/app/fonts/files/Mon
 // Chromium has no H.264.
 const clipFile = readFileSync(path.join(here, 'fixtures/red-then-blue.webm'))
 const thumbFile = readFileSync(path.join(here, 'fixtures/thumb.jpg'))
+// 2 s, 320x180, all green: a landscape clip for "Fit inside". Use it with wideItem().
+const wideFile = readFileSync(path.join(here, 'fixtures/green-wide.webm'))
+const wideThumb = readFileSync(path.join(here, 'fixtures/green-wide.jpg'))
+const WIDE = 'green-wide.webm'
 
 export const MISSING_KEY = {
   pexels:
@@ -66,6 +70,11 @@ export function libraryItem(id: string, overrides: Partial<FakeLibraryItem> = {}
     generation: null,
     ...overrides,
   }
+}
+
+/** A landscape (320x180) green clip. */
+export function wideItem(id: string, overrides: Partial<FakeLibraryItem> = {}): FakeLibraryItem {
+  return libraryItem(id, { name: `Wide ${id}`, file: WIDE, width: 320, height: 180, originalName: WIDE, ...overrides })
 }
 
 export function stockResult(source: Source, id: number, title: string, orientation: 'portrait' | 'landscape' = 'portrait') {
@@ -327,8 +336,9 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
       }
       const item = library.find((i) => i.id === parts[1])
       if (!item) return json(route, { detail: 'Library item was not found. Was it deleted?' }, 404)
-      if (parts[2] === 'file') return serveFile(route, clipFile, 'video/webm')
-      if (parts[2] === 'thumbnail') return route.fulfill({ status: 200, contentType: 'image/jpeg', body: thumbFile })
+      const wide = item.file === WIDE
+      if (parts[2] === 'file') return serveFile(route, wide ? wideFile : clipFile, 'video/webm')
+      if (parts[2] === 'thumbnail') return route.fulfill({ status: 200, contentType: 'image/jpeg', body: wide ? wideThumb : thumbFile })
       if (method === 'PATCH') {
         Object.assign(item, request.postDataJSON())
         return json(route, item)
