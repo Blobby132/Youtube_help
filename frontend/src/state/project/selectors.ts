@@ -20,7 +20,7 @@ export function canRender(project: Project): boolean {
  * Captions are out of date when they were timed against a voiceover other than the
  * current one, e.g. after the script changed and the AI read was regenerated.
  */
-export function captionsOutOfDate(project: Project): boolean {
+export function captionsOutOfDate(project: Pick<Project, 'captions' | 'voiceover'>): boolean {
   const { captions, voiceover } = project
   return captions.words.length > 0 && voiceover !== null && captions.voiceoverFile !== voiceover.file
 }

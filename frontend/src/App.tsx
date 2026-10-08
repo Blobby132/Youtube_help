@@ -3,6 +3,7 @@ import { startShotPolling } from './features/generate/generateStore'
 import { loadLibrary, useLibrary } from './features/library/libraryStore'
 import { PreviewPlayer } from './features/preview/PreviewPlayer'
 import { StartupOverlay } from './features/projects/StartupOverlay'
+import { followPreviewJobs } from './features/scenes/scenePreviews'
 import { Timeline } from './features/timeline/Timeline'
 import { TopBar } from './features/topbar/TopBar'
 import { LeftPanel } from './layout/LeftPanel'
@@ -18,6 +19,8 @@ export default function App() {
 
   useEffect(() => {
     void startPersistence()
+    // Scene previews' job state is saved with the project as the jobs list changes.
+    followPreviewJobs()
   }, [])
 
   // The shared media library: the timeline and preview need it, not just the Media tab.

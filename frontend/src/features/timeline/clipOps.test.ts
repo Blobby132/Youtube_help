@@ -10,6 +10,7 @@ import {
   MIN_CLIP,
   moveClip,
   newClip,
+  placeClip,
   setSpeed,
   splitClip,
   trimEnd,
@@ -210,5 +211,39 @@ describe('fit to voiceover', () => {
 
   it('stretches images to any length', () => {
     expect(fitToVoiceover([clip('img', 3, 1)], 9, sourceLength).clips[0]).toMatchObject({ start: 0, duration: 9 })
+  })
+})
+
+describe('placeClip (a scene’s footage)', () => {
+  const at = (id: string, start: number, duration: number, inPoint = 0) => ({ ...newClip(id, `m-${id}`, start, duration), inPoint })
+  const summary = (clips: TimelineClip[]) => clips.map((c) => [c.id, c.mediaId, c.start, c.duration, c.inPoint, c.speed])
+
+  it('replaces what is there, trimming clips across the edges', () => {
+    const clips = [at('a', 0, 3), at('b', 3, 2), at('c', 5, 4, 1)]
+    expect(summary(placeClip(clips, { id: 'm-new', duration: 10 }, 2, 6, 'n', 'split'))).toEqual([
+      ['a', 'm-a', 0, 2, 0, 1],
+      ['n', 'm-new', 2, 4, 0, 1],
+      ['c', 'm-c', 6, 3, 2, 1],
+    ])
+  })
+
+  it('keeps both sides of a clip that spans the whole stretch', () => {
+    expect(summary(placeClip([at('a', 0, 10)], { id: 'm-new', duration: null }, 3, 5, 'n', 'a2'))).toEqual([
+      ['a', 'm-a', 0, 3, 0, 1],
+      ['n', 'm-new', 3, 2, 0, 1],
+      ['a2', 'm-a', 5, 5, 5, 1],
+    ])
+  })
+
+  it('drops slivers shorter than a clip can be, and slows down footage that is too short', () => {
+    // b would keep only 0.1 s after the stretch, less than a clip can be: it goes.
+    const placed = placeClip([at('a', 0, 2.1), at('b', 5.1, 1)], { id: 'm-new', duration: 2 }, 2, 6, 'n', 'x')
+    expect(summary(placed)).toEqual([
+      ['a', 'm-a', 0, 2, 0, 1],
+      ['n', 'm-new', 2, 4, 0, 0.5],
+    ])
+    // Too short even at quarter speed: it plays as long as it can, leaving a gap.
+    const short = placeClip([], { id: 'm-new', duration: 0.5 }, 0, 4, 'n', 'x')
+    expect(summary(short)).toEqual([['n', 'm-new', 0, 2, 0, 0.25]])
   })
 })

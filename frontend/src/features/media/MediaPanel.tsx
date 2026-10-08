@@ -1,15 +1,19 @@
+import { Checkbox } from '../../components/ui/Checkbox'
 import { Section } from '../../components/ui/Section'
+import { setUi, useUi } from '../../state/ui'
 import { GenerateSection } from '../generate/GenerateSection'
 import { ImportFiles } from '../library/ImportFiles'
 import { LibraryList } from '../library/LibraryList'
-import { useLibrary } from '../library/libraryStore'
+import { isScenePreview, useLibrary } from '../library/libraryStore'
 import { AutofillSection } from './AutofillSection'
 import { StockSearch } from './StockSearch'
 import { SOURCE_LABEL } from './stockSources'
 import { useCurrentSource } from './stockStore'
 
 export function MediaPanel() {
-  const count = useLibrary((s) => s.items.length)
+  const previews = useLibrary((s) => s.items.filter(isScenePreview).length)
+  const showPreviews = useUi((s) => s.showScenePreviews)
+  const count = useLibrary((s) => s.items.length) - (showPreviews ? 0 : previews)
   const source = useCurrentSource()
 
   return (
@@ -29,6 +33,11 @@ export function MediaPanel() {
       <Section
         label={`Library${count ? ` · ${count}` : ''}`}
         hint="Shared by all your projects. Drag a clip onto the timeline's video track, or click +."
+        action={
+          previews > 0 && (
+            <Checkbox label={`Scene previews (${previews})`} checked={showPreviews} onChange={(checked) => setUi({ showScenePreviews: checked })} />
+          )
+        }
       >
         <LibraryList />
       </Section>

@@ -2,16 +2,14 @@ import { TriangleAlert } from 'lucide-react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatTimecode } from '../../lib/time'
-import { projectDuration } from '../../state/project/selectors'
-import { useProject, useProjectStore } from '../../state/project/store'
+import { useProject } from '../../state/project/store'
 import type { RankEntry } from '../../state/project/types'
-import { setUi, useUi } from '../../state/ui'
-import { groupCaptions } from '../captions/captionGroups'
+import { setUi } from '../../state/ui'
 import { rankSpans, resizeEntry } from '../ranking/rankEntries'
 import { setEntries } from '../ranking/rankingEdits'
-import { clipEnd } from './clipOps'
+import { laneSnapPoints, SNAP_LABEL } from './laneSnap'
 import { TIMELINE_ORIGIN_PX } from './scale'
-import { nearestPoint, SNAP_PIXELS, snapPoints, type SnapPoint } from './snap'
+import { nearestPoint, SNAP_PIXELS, type SnapPoint } from './snap'
 import styles from './Timeline.module.css'
 
 interface Drag {
@@ -23,14 +21,6 @@ interface Drag {
   moved: boolean
   preview: RankEntry[] | null
   snap: SnapPoint | null
-}
-
-const SNAP_LABEL: Record<SnapPoint['kind'], string> = {
-  word: 'word',
-  caption: 'caption',
-  clip: 'clip',
-  playhead: 'playhead',
-  edge: 'end',
 }
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-3
@@ -59,18 +49,6 @@ export function RanksLane({ pxPerSecond }: { pxPerSecond: number }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [drag])
 
-  function pointsNow(): SnapPoint[] {
-    const project = useProjectStore.getState().project
-    const { words, style } = project.captions
-    return snapPoints({
-      words,
-      groups: groupCaptions(words, style.wordsPerCaption),
-      clipEdges: project.clips.flatMap((c) => [c.start, clipEnd(c)]),
-      playhead: useUi.getState().playhead,
-      end: projectDuration(project),
-    })
-  }
-
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>, entry: RankEntry) {
     if (event.button !== 0) return
     setUi({ leftTab: 'ranking' })
@@ -83,7 +61,7 @@ export function RanksLane({ pxPerSecond }: { pxPerSecond: number }) {
       edge,
       originX: event.clientX,
       original: ranking.entries,
-      points: pointsNow(),
+      points: laneSnapPoints(),
       moved: false,
       preview: null,
       snap: null,

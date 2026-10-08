@@ -286,3 +286,40 @@ export function fitToVoiceover(clips: readonly TimelineClip[], end: number, sour
   })
   return { clips: fitted, removed: sorted.length - kept.length, slowed, gapsLeft }
 }
+
+/**
+ * Puts a clip of the media exactly over `start`..`end` (a scene's footage), in place of what's
+ * there: clips inside are removed, a clip across an edge is trimmed to the outside part, and one
+ * across both edges keeps both outside parts (the right one as `splitId`). Footage shorter than
+ * the stretch plays slower, down to quarter speed, as with Fit to voiceover.
+ */
+export function placeClip(
+  clips: readonly TimelineClip[],
+  media: { id: string; duration: number | null },
+  start: number,
+  end: number,
+  id: string,
+  splitId: string,
+): TimelineClip[] {
+  const result: TimelineClip[] = []
+  for (const clip of sortClips(clips)) {
+    if (clipEnd(clip) <= start + EPS || clip.start >= end - EPS) {
+      result.push(clip)
+      continue
+    }
+    const before = clip.start < start - EPS
+    if (before && start - clip.start >= MIN_CLIP - EPS) result.push(round({ ...clip, duration: start - clip.start }))
+    if (clipEnd(clip) > end + EPS && clipEnd(clip) - end >= MIN_CLIP - EPS) {
+      const inPoint = clip.inPoint + (end - clip.start) * clip.speed
+      result.push(round({ ...clip, id: before ? splitId : clip.id, start: end, duration: clipEnd(clip) - end, inPoint }))
+    }
+  }
+  const length = end - start
+  let speed = 1
+  let duration = length
+  if (media.duration != null && media.duration < length - EPS) {
+    speed = Math.max(MIN_SPEED, Math.floor((media.duration / length) * 1000) / 1000)
+    duration = Math.min(length, media.duration / speed)
+  }
+  return sortClips([...result, { ...newClip(id, media.id, start, duration), speed }])
+}

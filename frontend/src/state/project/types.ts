@@ -155,6 +155,59 @@ export interface Ranking {
   style: RankStyle
 }
 
+/** Where a scene's picture comes from: an AI clip made by ComfyUI, stock footage, or nothing yet. */
+export type SceneSource = 'ai' | 'stock' | 'none'
+
+/**
+ * A stretch of the video with one picture (the Scenes tab). Scenes never overlap and are
+ * listed in time order, so a scene's number is its position. Its narration is the words in
+ * its time range (from the captions, or estimated from the script), so it isn't stored.
+ */
+export interface Scene {
+  id: string
+  start: number
+  end: number
+  source: SceneSource
+  /** What should be on screen, in plain words. */
+  description: string
+  /** The text-to-video prompt for ComfyUI (AI scenes). */
+  prompt: string
+  /** The words "Find footage" searches Pixabay for (stock scenes). */
+  searchText: string
+  /** AI scenes: how many previews "Generate previews" makes at once (1 to 4). */
+  previewCount: number
+  /** AI scenes: the preview picked with "Use this" (an id in Project.scenePreviews). */
+  selectedPreviewId: string | null
+  /** Stock scenes: the library item placed on the timeline from "Find footage". */
+  stockItemId: string | null
+}
+
+/** Where a preview's ComfyUI job is: the same states as a Generate shot job. */
+export type PreviewStatus = 'queued' | 'running' | 'saving' | 'done' | 'error' | 'cancelled'
+
+/**
+ * A Draft preview of an AI scene, made by the Generate shot jobs (backend
+ * data/generations.json). Its video is a library clip; this is the project's own record of
+ * it (seed, last known job state), so it outlives the job list. Previews are kept apart from
+ * the scenes: undoing a scene edit never removes one, only deleting it does.
+ */
+export interface ScenePreview {
+  id: string
+  sceneId: string
+  /** The Generate shot job making it; a retry gets a new job with the same seed. */
+  jobId: string
+  seed: number
+  prompt: string
+  /** Seconds, a whole number from 2 to 5. */
+  duration: number
+  status: PreviewStatus
+  /** ComfyUI's reason when it failed. */
+  error: string | null
+  /** The library clip once it's made. */
+  itemId: string | null
+  createdAt: string
+}
+
 export interface Project {
   id: string
   name: string
@@ -171,6 +224,9 @@ export interface Project {
   captions: Captions
   canvas: Canvas
   ranking: Ranking
+  /** In time order. */
+  scenes: Scene[]
+  scenePreviews: ScenePreview[]
 }
 
 export interface ProjectSummary {

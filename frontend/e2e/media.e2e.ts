@@ -5,7 +5,7 @@ test('without a key, search shows how to add one and the real reason', async ({ 
   await fakeBackend(page)
   await page.goto('/')
   await page.getByRole('tab', { name: 'Media' }).click()
-  const media = page.getByRole('complementary', { name: 'Script, media and ranking' })
+  const media = page.getByRole('complementary', { name: 'Script, media, scenes and ranking' })
   await expect(media.getByRole('status').filter({ hasText: 'PIXABAY_API_KEY' })).toBeVisible()
   await expect(media.getByRole('button', { name: 'Auto-fill from script' })).toBeDisabled()
   await page.getByRole('searchbox', { name: 'Search Pixabay' }).fill('ocean')

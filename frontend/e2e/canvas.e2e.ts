@@ -148,7 +148,7 @@ test('ranking entries have their own times: added from the selection or sentence
   await page.getByRole('button', { name: 'Add “Alpha” to the timeline' }).click()
   await page.getByRole('button', { name: 'Add “Bravo” to the timeline' }).click()
 
-  const left = page.getByRole('complementary', { name: 'Script, media and ranking' })
+  const left = page.getByRole('complementary', { name: 'Script, media, scenes and ranking' })
   await left.getByRole('tab', { name: 'Ranking' }).click()
   await expect(left.getByRole('radio', { name: 'Count down 5→1' })).toHaveAttribute('aria-checked', 'true')
 
@@ -231,7 +231,7 @@ test('ranking entries have their own times: added from the selection or sentence
   // Saved with the project.
   await expect(page.locator('[data-state="saved"]')).toBeVisible()
   await page.reload()
-  await page.getByRole('complementary', { name: 'Script, media and ranking' }).getByRole('tab', { name: 'Ranking' }).click()
+  await page.getByRole('complementary', { name: 'Script, media, scenes and ranking' }).getByRole('tab', { name: 'Ranking' }).click()
   await expect(page.getByTestId('rank-block')).toHaveText(['#1 Boeing 747', '#2 Airbus A380'])
   await expectTime(page.getByTestId('rank-entry').nth(0), '0:00.00–0:02.00')
   await expectTime(page.getByTestId('rank-entry').nth(1), '0:02.00–0:04.00')
@@ -245,7 +245,7 @@ test('Undo and Redo cover every ranking edit, and times can be typed', async ({ 
   await fakeBackend(page, { library: [] })
   await page.goto('/')
   await expect(page.locator('[data-state="saved"]')).toBeVisible()
-  const left = page.getByRole('complementary', { name: 'Script, media and ranking' })
+  const left = page.getByRole('complementary', { name: 'Script, media, scenes and ranking' })
   await left.getByRole('tab', { name: 'Ranking' }).click()
   const entries = left.getByTestId('rank-entry')
   const addButton = left.getByRole('button', { name: 'Add entry' })

@@ -38,6 +38,12 @@
   font-size: 12px;
 }
 
+/* Four or more tabs share the width by the length of their labels, so none is cut short. */
+.tabs:has(> .item:nth-child(4)) .item {
+  flex-basis: auto;
+  padding: 0 6px;
+}
+
 .choice {
   border-radius: var(--radius);
   padding: 2px;

@@ -25,7 +25,8 @@
   --track-h: 28px;
 }
 
-.ranks {
+.ranks,
+.scenes {
   --track-h: 28px;
 }
 
@@ -39,7 +40,8 @@
   }
 
   .captions,
-  .ranks {
+  .ranks,
+  .scenes {
     --track-h: 22px;
   }
 }
@@ -255,6 +257,37 @@
   white-space: nowrap;
   color: #f4e7a6;
   cursor: pointer;
+}
+
+.sceneBlock {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, #4cc9f0 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, #4cc9f0 13%, #1e1e24);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #bfe9f7;
+  cursor: pointer;
+}
+
+.sceneNone {
+  border-style: dashed;
+  background: #1e1e24;
+  color: var(--text-muted);
+}
+
+.sceneSelected {
+  border-color: #4cc9f0;
+  box-shadow: 0 0 0 1px #4cc9f0;
 }
 
 .rankWarning {
@@ -476,7 +509,11 @@
 .rankBlock:hover .edgeStart,
 .rankBlock:hover .edgeEnd,
 .rankBlock.dragging .edgeStart,
-.rankBlock.dragging .edgeEnd {
+.rankBlock.dragging .edgeEnd,
+.sceneBlock:hover .edgeStart,
+.sceneBlock:hover .edgeEnd,
+.sceneBlock.dragging .edgeStart,
+.sceneBlock.dragging .edgeEnd {
   background: linear-gradient(to right, transparent 2px, rgb(255 255 255 / 0.85) 2px 5px, transparent 5px);
   background-size: 100% 40%;
   background-position: center;

@@ -21,13 +21,15 @@ The app is built in stages. Each stage is tested before the next one starts.
 | 4 | Media tab (Pexels and uploads) and timeline | ✅ done |
 | 5 | Canvas & title, Ranking tab | ✅ done |
 | 6 | FFmpeg render | ✅ done |
+| 7 | AI Scenes, part A: scenes from the script, stock footage and AI previews per scene | 🧪 ready to test |
 
 Working now: the full layout, autosaved projects, the script box, all three ways to make a
 voiceover (AI read, recording, upload) plus background music, word-timed captions, a media
 library shared by all projects (Pixabay and Pexels search, your own clips and images, Auto-fill,
 Generate shot), a timeline whose clips, voiceover and captions play together in the preview,
 clips that fill the frame or fit inside it over a blurred or solid background, a title,
-ranking overlays for countdown videos, and the final render to a Shorts-ready MP4.
+ranking overlays for countdown videos, scenes (the video cut into 2 to 5 second stretches, each
+with stock footage or AI previews to choose from), and the final render to a Shorts-ready MP4.
 
 ## Windows setup
 
@@ -286,6 +288,10 @@ card shows the prompt, with:
 
 The clip also stores its seed, quality, resolution, length and the workflow file it came from.
 
+The Scenes tab's **previews** are made by these same jobs (see [Scenes](#scenes)). They aren't in
+the Shots list (the Scenes tab shows them, and **Clear finished** leaves them alone), and the
+library hides them unless you tick **Scene previews** above it.
+
 **The workflow.** `comfy\ltx_t2v_api.json` is the LTX-2.5 text-to-video workflow exported
 from ComfyUI with *Workflow → Export (API)*. The app changes only these inputs, listed in one
 place (`backend/app/comfy/workflow.py`):
@@ -332,8 +338,8 @@ the timeline (after asking); **Undo** brings them back.
 - **Split** cuts the clip at the playhead, **Delete** (or the Delete key) removes the selected
   clip, and **Fit to voiceover** closes every gap and ends the last clip with the voiceover. It
   keeps your cuts: each clip runs until the next one starts, using more of its footage, and
-  plays slower if it runs out. **Undo/Redo** (Ctrl+Z, Ctrl+Shift+Z) cover all clip edits and
-  every ranking change, in the order you made them.
+  plays slower if it runs out. **Undo/Redo** (Ctrl+Z, Ctrl+Shift+Z) cover all clip edits,
+  every ranking change and every scene change, in the order you made them.
 - **9:16 crop.** A clip fills the 1080×1920 frame and is cropped. Select a clip and use
   **Crop position** in the **Clip settings** card beside the preview (left–right for wide
   clips, top–bottom for tall ones), or drag the picture in the preview. On a narrow window the
@@ -361,6 +367,74 @@ the timeline (after asking); **Undo** brings them back.
 Captions, the title and the ranking are drawn over the clips in the preview, captions on top.
 Their positions are shared numbers (`frontend/src/features/preview/captionLayout.ts` and
 `frontend/src/features/canvas/overlayLayout.ts`) so the render places them the same way.
+
+## Scenes
+
+The **Scenes** tab cuts the video into scenes, each with its own picture: an AI clip made by
+ComfyUI, or stock footage from Pixabay. (Part A: the scenes are made by rules, and you type each
+scene's visual description, prompt and search text; filling them in automatically comes later.)
+
+- **Create scenes from script** cuts the narration at sentence ends, then, where a sentence is
+  too long, at commas or pauses, so that every scene is **2 to 5 seconds** long (LTX clips fall
+  apart beyond about 5 seconds). A sentence too short for a scene of its own is grouped with a
+  neighbour; only when no comma or pause works is a sentence cut between other words. The scenes
+  run from the start of the video to its end with no gaps. Times come from the captions' words
+  when there are captions (and they aren't out of date); otherwise the script's words are spread
+  over the voiceover, or over its estimated length (155 words a minute) without one, as Auto-fill
+  does. When scenes already exist it asks first, and Undo brings the old ones back.
+- **Each scene** has its number, start and end, its **narration** (the words in its time, from the
+  captions or the estimate), a **source** (AI, Stock or None), a **visual description**, the
+  **ComfyUI prompt** (shown for AI scenes) and the **stock search text** (shown for Stock scenes).
+- **Times** work like ranking entries: type a start or end (`0:03.04` or `3.04`; Enter applies,
+  Escape cancels), or drag a scene's edges on the **Scenes** track of the timeline. Edges snap to
+  words, caption changes, clip edges, the playhead and the ends of the video (hold Alt to place
+  freely). Scenes never overlap. An edge a scene shares with the next one moves both, so the cut
+  stays where they meet; hold Shift while dragging to move only this scene's edge. A time that
+  can't be used (not a time, an end before the start, a scene under 0.5 s, an overlap) changes
+  nothing and says why. Click a scene on the track to open it in the Scenes tab.
+- **Split** cuts a scene at the playhead (when it's inside the scene), else at the word nearest
+  its middle; the first part keeps the scene and its previews, the second copies its texts.
+  **Merge** joins a scene with the next one. **Add scene** puts a 3-second scene at the playhead
+  (or in the first free time). **Delete** removes a scene.
+- **Undo/Redo** (the timeline's buttons, Ctrl+Z and Ctrl+Shift+Z, also from inside the scene
+  fields) cover every scene change, including typing (as one step per field), "Use this" and
+  placing stock footage, in one history with the clip and ranking edits.
+
+### Stock scenes
+
+**Find footage** searches Pixabay for the scene's search text (portrait videos first). **Use** on a
+result downloads it into the library, as Add does in the Media tab, and puts it on the timeline
+over exactly the scene's time, in place of what's there: clips inside are removed and clips across
+its edges trimmed. Footage shorter than the scene plays slower (down to quarter speed). Undo takes
+it off again.
+
+### AI scenes
+
+- **Previews** (1 to 4, 2 by default) is how many **Generate previews** makes. They're Generate
+  shot jobs at **Draft** quality, each with its own random seed, as long as the scene rounded up to
+  whole seconds (2 to 5). Generating again adds more; previews are only removed when you delete
+  them (the trash button, which also deletes the clip from the library).
+- Each scene lists its previews with their seed and state: **Queued**, **Generating** (with the
+  job's real progress), **Completed**, **Failed** or **Cancelled**, and a status line per running
+  preview, e.g. "Scene 3: preview 2 of 2, seed 123456, 62%", with ComfyUI's own step message under
+  it. Nothing is estimated.
+- **Use this** picks the scene's preview; the chosen one is highlighted, and you can pick another
+  at any time. **Cancel** stops one that's waiting or running.
+- A failed preview shows ComfyUI's error and **Retry**, which makes only that preview again, with
+  the same prompt, seed and length. Nothing else in any scene changes.
+- Previews are saved through `Library.add_clip` with source `ai`, AI-generated, and with their
+  prompt, seed, project id, scene id and type `preview` in the clip's `generation` metadata.
+- Undoing, deleting, merging or recreating scenes never removes a preview: a preview whose scene
+  is gone is listed under **Previews from removed scenes** (Undo brings the scene back with them).
+
+### Saved with the project
+
+Scenes, their times and texts, each preview's seed, prompt and last job state, and the chosen
+preview are saved in `project.json`; the clips themselves stay in the library and the project only
+refers to them by id. The project keeps following the jobs, so a preview that finished while the
+app was closed shows up when you open it again (found by its job id in the library if the jobs
+list no longer has it). Projects saved before scenes open with no scenes; nothing else changes,
+so the project version stays the same.
 
 ## Ranking
 
@@ -466,7 +540,8 @@ are downloaded, real speech generation and a Kokoro → Whisper → captions rou
 shot is tested against a fake ComfyUI server (its HTTP and websocket API): the workflow mapping
 on the real `comfy\ltx_t2v_api.json`, submitting variations, queue positions, live progress,
 saving finished shots to the library, failures, cancelling, a lost job, an unreachable ComfyUI
-and picking up jobs again after a restart. The render tests render small projects with real
+and picking up jobs again after a restart, plus scene previews: their seeds, saving them with
+their project and scene, Retry rerunning only the failed one, and Clear finished leaving them. The render tests render small projects with real
 FFmpeg and check the MP4: length, size, frame rate (mixed 24/25/30 fps → 30, all 25 → 25),
 codecs, 48 kHz audio and clip audio, faststart, and the picture at chosen frames (the Fill crop,
 Fit inside over a solid and a blurred background, gaps, trims, speed, overlays at exactly their
@@ -475,7 +550,10 @@ frames), plus the checks, file names, cancelling and the render API.
 out-of-date check, every timeline edit, snapping, undo, the 9:16 crop and Fit inside, the title
 and ranking layout, rank numbers, warnings and time ranges, typed times, undo and redo of every
 ranking change, upgrading older projects (clip links to times), Auto-fill timing and the
-ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
+ComfyUI file-name check, and for scenes: creating and grouping them with and without captions,
+dragged and typed times, split, merge, add and delete, undo and redo of every scene change,
+saving and opening older projects, placing stock footage, and generating, following, choosing,
+retrying and deleting previews). `npm run test:e2e` drives the real frontend in Chromium against a
 fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
 splitting, the crop control, Pexels and Pixabay results, the source switch, the rate-limit
 countdown, imports with the AI flag, and Generate shot (the dialog, the jobs list across a
@@ -483,7 +561,10 @@ reload, cancelling, and an AI clip's Copy prompt, Generate again and Final quali
 over a solid and a blurred background, the title bar and its timing, and ranking entries (timing
 from the selection and the sentence, dragging and snapping edges, typed times and their
 messages, Undo and Redo of ranking edits from the buttons and the keyboard, clip edits leaving
-them alone, reordering, warnings, the overlay in the preview, saving), and the render dialog
+them alone, reordering, warnings, the overlay in the preview, saving), scenes (creating them
+with and without captions, asking before replacing them, typed and dragged times with snapping,
+split, merge, add, delete and undo, AI previews with their status lines, choosing, Retry, and
+saving across a reload, the library filter, Find footage on Pixabay), and the render dialog
 (warnings, quality choice, progress, cancel, the finished screen) (on a new machine, first
 run `npx playwright install chromium` once inside the `frontend` folder).
 `npm --prefix frontend run test:render` renders a project for real (the backend, FFmpeg and
@@ -516,7 +597,8 @@ backend/                FastAPI app (Python)
 frontend/               React + TypeScript + Vite
   src/components/ui/    shared controls (buttons, tabs, sliders, alerts, ...)
   src/features/         one folder per feature: script, voiceover, mix, media, library, generate,
-                        ranking, captions, canvas, preview, render, timeline, projects, topbar
+                        scenes, ranking, captions, canvas, preview, render, timeline, projects,
+                        topbar
   src/layout/           left and right side panels
   src/state/            project document, autosave, editor UI state
   src/styles/global.css design tokens; change --accent to re-theme the app
@@ -557,5 +639,5 @@ exports/                finished videos, one folder per project (not committed)
 - **A clip on the timeline says "Missing clip"**: it was deleted from the library. Delete it
   from the timeline or drop another clip in its place.
 - **Keyboard**: Space plays/pauses the preview, Delete removes the selected clip, Ctrl+Z and
-  Ctrl+Shift+Z (or Ctrl+Y) undo and redo clip and ranking edits. In a text field outside the
-  Ranking tab they undo your typing instead.
+  Ctrl+Shift+Z (or Ctrl+Y) undo and redo clip, ranking and scene edits. In a text field outside
+  the Ranking and Scenes tabs they undo your typing instead.

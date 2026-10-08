@@ -1,5 +1,5 @@
 import { Check, CircleX, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ProgressBar } from '../../components/ui/ProgressBar'
 import type { ShotJob } from '../../lib/api'
 import { formatDuration } from '../../lib/time'
@@ -19,9 +19,10 @@ function useNow(active: boolean) {
   return now
 }
 
-/** The shots being made (and recently made), newest first. */
+/** The shots being made (and recently made), newest first. Scene previews are in the Scenes tab. */
 export function ShotJobs() {
-  const jobs = useGenerate((s) => s.jobs)
+  const all = useGenerate((s) => s.jobs)
+  const jobs = useMemo(() => all.filter((j) => !j.scene), [all])
   const now = useNow(jobs.some((j) => j.status === 'running'))
   if (!jobs.length) return null
   const finished = jobs.filter((j) => !isActive(j)).length
