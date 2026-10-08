@@ -116,7 +116,7 @@ function scheduleSave(delay = AUTOSAVE_DELAY_MS) {
 export const flushSave = saveNow
 
 function resetEditorState() {
-  setUi({ playhead: 0, playing: false, selectedClipId: null })
+  setUi({ playhead: 0, playing: false, selectedClipId: null, selectedSceneId: null })
 }
 
 export async function newProject(): Promise<void> {

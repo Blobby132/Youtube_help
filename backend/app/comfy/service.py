@@ -5,6 +5,9 @@ thread follows them: queue position from /queue, live progress from ComfyUI's we
 the result from /history. A finished video is downloaded and added through Library.add_clip
 (source "ai", AI-generated). Jobs are kept in data/generations.json, so they survive a page
 reload and a backend restart (tracking resumes where it left off).
+
+Scene previews (the Scenes tab) are ordinary jobs with a `scene` (project and scene id): the
+same queue, progress and library, plus those ids and type "preview" in the clip's metadata.
 """
 
 from __future__ import annotations
@@ -57,6 +60,16 @@ STAGES: dict[str, tuple[float, str]] = {
     "SaveVideo": (2, "Saving the video"),
 }
 OTHER_WEIGHT = 0.2
+
+
+def scene_ref(scene: dict[str, Any] | None) -> dict[str, str] | None:
+    """The project and scene a preview belongs to, checked: {"projectId", "sceneId"} or None."""
+    if scene is None:
+        return None
+    ref = {key: str(scene.get(key) or "").strip() for key in ("projectId", "sceneId")}
+    if not all(ref.values()):
+        raise AppError("A scene preview needs its project and scene.", 400)
+    return ref
 
 
 def shot_name(prompt: str, variation: int, variations: int) -> str:
@@ -182,9 +195,12 @@ class GenerationService:
         variations: int = 1,
         seed: int | None = None,
         based_on: str | None = None,
+        scene: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        """Queues `variations` shots in ComfyUI, each with its own random seed (or `seed`)."""
+        """Queues `variations` shots in ComfyUI, each with its own random seed (or `seed`).
+        With `scene` ({"projectId", "sceneId"}) they're previews for that scene."""
         prompt = prompt.strip()
+        scene = scene_ref(scene)
         if not prompt:
             raise AppError("Describe the shot first: the prompt is empty.", 400)
         if not MIN_SECONDS <= duration <= MAX_SECONDS:
@@ -217,6 +233,7 @@ class GenerationService:
                 "fps": wf.FPS,
                 "workflow": self.workflow_path.name,
                 "basedOn": based_on,
+                "scene": scene,
                 "promptId": None,
                 "status": "queued",
                 "queuePosition": None,
@@ -273,8 +290,10 @@ class GenerationService:
         self._save()
 
     def clear_finished(self) -> None:
+        """Removes the finished shots from the list. Scene previews aren't in that list (the
+        Scenes tab shows them), so they stay."""
         with self._lock:
-            for job_id in [j["id"] for j in self.jobs.values() if j["status"] in FINISHED]:
+            for job_id in [j["id"] for j in self.jobs.values() if j["status"] in FINISHED and not j.get("scene")]:
                 del self.jobs[job_id]
         self._save()
 
@@ -414,6 +433,9 @@ class GenerationService:
                     "basedOn": job.get("basedOn"),
                     "generatedAt": utc_now(),
                 }
+                if job.get("scene"):
+                    # A scene preview: which project and scene it's for, and the job that made it.
+                    generation.update(type="preview", **job["scene"], shotId=job["id"])
                 metadata = ClipMetadata(
                     name=shot_name(job["prompt"], job["variation"], job["variations"]),
                     ai_generated=True,

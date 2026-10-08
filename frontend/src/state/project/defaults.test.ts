@@ -63,6 +63,47 @@ describe('normalizeProject', () => {
     ])
   })
 
+  it('opens projects saved before scenes with no scenes, and keeps the version', () => {
+    for (const old of [
+      { id: 'p-v1', version: 1, name: 'Stage 5', clips: [], ranking: { entries: [{ id: 'r1', label: 'A', clipId: null }] } },
+      { id: 'p-v2', version: 2, name: 'Ranking times', script: 'Hello there.', clips: [] },
+    ]) {
+      const project = normalizeProject(old)
+      expect(project.scenes).toEqual([])
+      expect(project.scenePreviews).toEqual([])
+      expect(project.version).toBe(2)
+    }
+  })
+
+  it('keeps scenes, their texts, preview seeds, the selection and job state through a save', () => {
+    const saved = createProject()
+    saved.scenes = [
+      {
+        id: 's1',
+        start: 0,
+        end: 3.2,
+        source: 'ai',
+        description: 'A fox in the snow',
+        prompt: 'A red fox trots through deep snow at dusk',
+        searchText: '',
+        previewCount: 3,
+        selectedPreviewId: 'v2',
+        stockItemId: null,
+      },
+      { id: 's2', start: 3.2, end: 6, source: 'stock', description: '', prompt: '', searchText: 'snowy forest', previewCount: 2, selectedPreviewId: null, stockItemId: 'm-pixabay1' },
+    ]
+    saved.scenePreviews = [
+      { id: 'v1', sceneId: 's1', jobId: 'g-1', seed: 123456, prompt: 'A red fox', duration: 4, status: 'error', error: 'CUDA out of memory', itemId: null, createdAt: '2026-10-08T00:00:00Z' },
+      { id: 'v2', sceneId: 's1', jobId: 'g-2', seed: 654321, prompt: 'A red fox', duration: 4, status: 'done', error: null, itemId: 'm-g2', createdAt: '2026-10-08T00:00:00Z' },
+      { id: 'v3', sceneId: 's1', jobId: 'g-3', seed: 42, prompt: 'A red fox', duration: 4, status: 'running', error: null, itemId: null, createdAt: '2026-10-08T00:00:00Z' },
+    ]
+    const reopened = normalizeProject(JSON.parse(JSON.stringify(saved)))
+    expect(reopened.scenes).toEqual(saved.scenes)
+    expect(reopened.scenePreviews).toEqual(saved.scenePreviews)
+    // Media stays in the library: the project only refers to it by id.
+    expect(JSON.stringify(reopened)).not.toMatch(/\.mp4|\.webm|data:/)
+  })
+
   it('keeps "Fit inside" and the canvas settings', () => {
     const saved = createProject()
     saved.clips = [{ id: 'c1', mediaId: 'm1', start: 0, duration: 2, inPoint: 0, speed: 1, cropX: 0.5, cropY: 0.5, fit: 'inside', keepAudio: false, volume: 0.5 }]

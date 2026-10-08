@@ -47,6 +47,9 @@ function upsert(item: LibraryItem) {
   useLibrary.setState((s) => ({ items: [item, ...s.items.filter((i) => i.id !== item.id)] }))
 }
 
+/** A scene's AI preview (the Scenes tab shows those); the library list hides them unless asked. */
+export const isScenePreview = (item: LibraryItem) => item.generation?.type === 'preview'
+
 export async function loadLibrary() {
   useLibrary.setState({ status: 'loading', error: null })
   try {
@@ -169,13 +172,14 @@ function upsertInPlace(item: LibraryItem) {
   useLibrary.setState((s) => ({ items: s.items.map((i) => (i.id === item.id ? item : i)) }))
 }
 
-/** Deletes an item, asking first when a project uses it. Its clips leave gaps in this project. */
-export async function deleteItem(itemId: string) {
+/** Deletes an item, asking first when a project uses it. Its clips leave gaps in this project.
+ * Resolves to whether it was deleted. */
+export async function deleteItem(itemId: string): Promise<boolean> {
   const item = useLibrary.getState().items.find((i) => i.id === itemId)
-  if (!item) return
+  if (!item) return false
   const usedHere = useProjectStore.getState().project.clips.some((c) => c.mediaId === itemId)
-  if (usedHere && !window.confirm(`“${item.name}” is on this project's timeline. Delete it from the library and leave a gap there?`)) return
-  if (!usedHere && !window.confirm(`Delete “${item.name}” from the library? The file is removed from your PC.`)) return
+  if (usedHere && !window.confirm(`“${item.name}” is on this project's timeline. Delete it from the library and leave a gap there?`)) return false
+  if (!usedHere && !window.confirm(`Delete “${item.name}” from the library? The file is removed from your PC.`)) return false
   await flushSave()
   try {
     try {
@@ -183,12 +187,12 @@ export async function deleteItem(itemId: string) {
     } catch (error) {
       if (!(error instanceof ApiError) || error.status !== 409) throw error
       // Used by other projects too: the backend says which.
-      if (!window.confirm(`${error.message} Delete it anyway?`)) return
+      if (!window.confirm(`${error.message} Delete it anyway?`)) return false
       await api.deleteLibraryItem(itemId, true)
     }
   } catch (error) {
     useLibrary.setState({ error: `Could not delete “${item.name}”: ${message(error)}` })
-    return
+    return false
   }
   useLibrary.setState((s) => ({ items: s.items.filter((i) => i.id !== itemId) }))
   if (usedHere) {
@@ -199,6 +203,7 @@ export async function deleteItem(itemId: string) {
       setUi({ selectedClipId: null })
     }
   }
+  return true
 }
 
 export const clearLibraryError = () => useLibrary.setState({ error: null })

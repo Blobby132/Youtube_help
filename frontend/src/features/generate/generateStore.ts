@@ -8,11 +8,13 @@ interface GenerateState {
   status: ComfyStatus | null
   checking: boolean
   jobs: ShotJob[]
+  /** True once the jobs list has come from the backend (until then `jobs` may be incomplete). */
+  listed: boolean
   /** Why the last list, cancel or generate request failed. */
   error: string | null
 }
 
-export const useGenerate = create<GenerateState>()(() => ({ status: null, checking: false, jobs: [], error: null }))
+export const useGenerate = create<GenerateState>()(() => ({ status: null, checking: false, jobs: [], listed: false, error: null }))
 
 const ACTIVE = new Set(['queued', 'running', 'saving'])
 const FAST_MS = 1500
@@ -33,7 +35,7 @@ export async function checkComfy() {
 
 function applyJobs(jobs: ShotJob[]) {
   const before = new Map(useGenerate.getState().jobs.map((j) => [j.id, j.status]))
-  useGenerate.setState({ jobs, error: null })
+  useGenerate.setState({ jobs, listed: true, error: null })
   // A shot just landed in the library: show it there.
   const items = new Set(useLibrary.getState().items.map((i) => i.id))
   if (jobs.some((j) => j.status === 'done' && j.itemId && !items.has(j.itemId) && before.get(j.id) !== 'done')) {

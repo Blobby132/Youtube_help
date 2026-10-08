@@ -19,6 +19,7 @@ from app.comfy.client import ComfyClient, readable_refusal
 from app.comfy.router import get_service
 from app.comfy.service import GenerationService, shot_name
 from app.core.config import REPO_ROOT, Settings, get_settings
+from app.core.errors import AppError
 from app.main import create_app
 from tests.fake_comfy import FakeComfy, free_port
 from tests.media_files import make_video, needs_ffmpeg
@@ -388,3 +389,80 @@ def test_client_lists_queue_in_order(comfy: FakeComfy) -> None:
     ids = [client.submit({"1": {"class_type": "X", "inputs": {}}}, "c") for _ in range(3)]
     comfy.start_next(notify=False)
     assert client.queue() == ([ids[0]], ids[1:])
+
+
+# Scene previews (the Scenes tab) -----------------------------------------------------------------
+
+SCENE = {"projectId": "p-scenes", "sceneId": "s-three"}
+
+
+def previews(client: TestClient, count: int = 2, **body) -> list[dict]:
+    return shots(client, duration=3, quality="draft", variations=count, scene=SCENE, **body)
+
+
+@needs_ffmpeg
+def test_scene_previews_are_shots_saved_with_their_scene(client: TestClient, comfy: FakeComfy, make_service) -> None:
+    first, second = previews(client)
+    assert first["scene"] == second["scene"] == SCENE
+    assert first["seed"] != second["seed"]
+    sent = [comfy.submitted[j["promptId"]]["prompt"] for j in (first, second)]
+    assert [s["405:339"]["inputs"]["noise_seed"] for s in sent] == [first["seed"], second["seed"]]
+    assert all(s["409"]["inputs"]["megapixels"] == 0.4 and s["405:362"]["inputs"]["value"] == 3 for s in sent)
+
+    # The scene is kept with the job, so a restarted backend still knows it.
+    assert make_service().list()[0]["scene"] == SCENE
+
+    for queued in (first, second):
+        comfy.finish(comfy.start_next())
+        wait_until(lambda: job(client, queued["id"])["status"] == "done", what="the preview to be saved")
+    items = {item["id"]: item for item in client.get("/api/library").json()}
+    for queued in (first, second):
+        item = items[job(client, queued["id"])["itemId"]]
+        assert item["source"] == "ai" and item["aiGenerated"] is True
+        generation = item["generation"]
+        assert (generation["prompt"], generation["seed"], generation["quality"]) == (PROMPT, queued["seed"], "draft")
+        assert (generation["type"], generation["projectId"], generation["sceneId"]) == ("preview", "p-scenes", "s-three")
+        assert generation["shotId"] == queued["id"]
+
+
+@needs_ffmpeg
+def test_retry_reruns_only_the_failed_preview(client: TestClient, comfy: FakeComfy) -> None:
+    failed, ok = previews(client)
+    comfy.finish(comfy.start_next(), error="CUDA out of memory. Tried to allocate 2.00 GiB")
+    wait_until(lambda: job(client, failed["id"])["status"] == "error", what="the failure")
+    assert job(client, failed["id"])["error"].endswith("CUDA out of memory. Tried to allocate 2.00 GiB")
+    comfy.finish(comfy.start_next())
+    wait_until(lambda: job(client, ok["id"])["status"] == "done", what="the other preview")
+    done = job(client, ok["id"])
+    submitted = len(comfy.submitted)
+
+    # Retry: the failed preview again, with its own seed, prompt and length. Nothing else is sent.
+    [retry] = previews(client, count=1, seed=failed["seed"])
+    assert len(comfy.submitted) == submitted + 1
+    assert (retry["seed"], retry["prompt"], retry["duration"], retry["scene"]) == (failed["seed"], PROMPT, 3, SCENE)
+    assert comfy.submitted[retry["promptId"]]["prompt"]["405:339"]["inputs"]["noise_seed"] == failed["seed"]
+    assert client.delete(f"/api/comfy/shots/{failed['id']}").status_code == 200
+    assert job(client, ok["id"]) == done  # the preview that worked is left alone
+
+    comfy.finish(comfy.start_next())
+    wait_until(lambda: job(client, retry["id"])["status"] == "done", what="the retried preview")
+    seeds = sorted(item["generation"]["seed"] for item in client.get("/api/library").json())
+    assert seeds == sorted([failed["seed"], ok["seed"]])
+    assert failed["id"] not in [j["id"] for j in client.get("/api/comfy/shots").json()["jobs"]]
+
+
+def test_clearing_finished_shots_keeps_scene_previews(client: TestClient) -> None:
+    [shot] = shots(client)
+    [preview] = previews(client, count=1)
+    for queued in (shot, preview):
+        client.post(f"/api/comfy/shots/{queued['id']}/cancel")
+    remaining = client.post("/api/comfy/shots/clear").json()["jobs"]
+    assert [j["id"] for j in remaining] == [preview["id"]]
+
+
+def test_a_scene_preview_needs_its_project_and_scene(client: TestClient, service: GenerationService) -> None:
+    for scene in ({"projectId": "", "sceneId": "s-1"}, {"projectId": "p-1"}):
+        assert client.post("/api/comfy/shots", json={"prompt": PROMPT, "scene": scene}).status_code == 422
+    with pytest.raises(AppError, match="needs its project and scene"):
+        service.generate(PROMPT, 3, "draft", scene={"projectId": "p-1", "sceneId": " "})
+    assert service.list() == []

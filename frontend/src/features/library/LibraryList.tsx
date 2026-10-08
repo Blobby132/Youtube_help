@@ -1,5 +1,5 @@
 import { Film, Image as ImageIcon, Library, Plus, Sparkles, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Checkbox } from '../../components/ui/Checkbox'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { InlineAlert } from '../../components/ui/InlineAlert'
@@ -7,16 +7,20 @@ import { libraryFileUrl, libraryThumbnailUrl, type LibraryItem, type MediaSource
 import { formatClipLength } from '../../lib/time'
 import { AiShotDetails } from '../generate/AiShotDetails'
 import { useProject } from '../../state/project/store'
+import { useUi } from '../../state/ui'
 import { addToTimeline } from '../timeline/timelineEdits'
 import { endMediaDrag, startMediaDrag } from './dragMedia'
 import styles from './Library.module.css'
-import { clearLibraryError, deleteItem, updateItem, useLibrary } from './libraryStore'
+import { clearLibraryError, deleteItem, isScenePreview, updateItem, useLibrary } from './libraryStore'
 
 const SOURCE_LABEL: Record<MediaSource, string> = { pexels: 'Pexels', pixabay: 'Pixabay', upload: 'Imported', ai: 'AI shot' }
 
 /** Every clip in the shared library. Drag one onto the timeline, or use +. */
 export function LibraryList() {
-  const { items, status, error } = useLibrary()
+  const { items: all, status, error } = useLibrary()
+  const showPreviews = useUi((s) => s.showScenePreviews)
+  const items = useMemo(() => (showPreviews ? all : all.filter((item) => !isScenePreview(item))), [all, showPreviews])
+  const hidden = all.length - items.length
   const used = useProject((p) => p.clips)
   const onTimeline = new Set(used.map((c) => c.mediaId))
 
@@ -31,8 +35,13 @@ export function LibraryList() {
         </InlineAlert>
       )}
       {status === 'loading' && !items.length && <p className={styles.note}>Loading the library…</p>}
-      {status === 'ready' && !items.length && (
+      {status === 'ready' && !all.length && (
         <EmptyState icon={Library}>Nothing here yet. Clips you add from Pexels or import appear here, for all your projects.</EmptyState>
+      )}
+      {status === 'ready' && hidden > 0 && !items.length && (
+        <p className={styles.note}>
+          Only scene previews so far ({hidden}). Tick Scene previews above to see them.
+        </p>
       )}
       {items.length > 0 && (
         <ul className={styles.list} aria-label="Library">

@@ -1,12 +1,13 @@
 // Timeline actions with undo. Each edit replaces the project's clips with the result of a
-// pure function from clipOps.ts, or changes the ranking, and remembers both as they were before
-// it: Undo and Redo cover clip and ranking edits alike, in the order they were made.
+// pure function from clipOps.ts, or changes the ranking or the scenes, and remembers all three
+// as they were before it: Undo and Redo cover clip, ranking and scene edits alike, in the order
+// they were made. (Scene previews aren't in it: undo never removes one; see scenePreviews.ts.)
 import { produce } from 'immer'
 import { create } from 'zustand'
 import type { LibraryItem } from '../../lib/api'
 import { newId } from '../../lib/ids'
 import { useProjectStore, updateProject } from '../../state/project/store'
-import type { Ranking, TimelineClip } from '../../state/project/types'
+import type { Ranking, Scene, TimelineClip } from '../../state/project/types'
 import { setUi, useUi } from '../../state/ui'
 import { useLibrary } from '../library/libraryStore'
 import {
@@ -24,11 +25,13 @@ const HISTORY_LIMIT = 100
 /** Slider drags arrive as many small edits; within this window they undo as one. */
 const MERGE_MS = 1200
 
-/** What one undo step brings back. The ranking is in it as a whole, so every ranking change
- * has to go through editRanking: Undo would silently revert one that didn't. */
+/** What one undo step brings back. The ranking and the scenes are in it as a whole, so every
+ * ranking change has to go through editRanking, and every scene change through editScenes (or
+ * editTimeline): Undo would silently revert one that didn't. */
 export interface TimelineSnapshot {
   clips: TimelineClip[]
   ranking: Ranking
+  scenes: Scene[]
 }
 
 interface HistoryState {
@@ -55,17 +58,19 @@ useProjectStore.subscribe((state) => {
 const currentClips = () => useProjectStore.getState().project.clips
 
 function snapshot(): TimelineSnapshot {
-  const { clips, ranking } = useProjectStore.getState().project
-  return { clips, ranking }
+  const { clips, ranking, scenes } = useProjectStore.getState().project
+  return { clips, ranking, scenes }
 }
 
-function restore({ clips, ranking }: TimelineSnapshot) {
+function restore({ clips, ranking, scenes }: TimelineSnapshot) {
   updateProject((p) => {
     p.clips = clips
     p.ranking = ranking
+    p.scenes = scenes
   })
-  const selected = useUi.getState().selectedClipId
-  if (selected && !clips.some((c) => c.id === selected)) setUi({ selectedClipId: null })
+  const { selectedClipId, selectedSceneId } = useUi.getState()
+  if (selectedClipId && !clips.some((c) => c.id === selectedClipId)) setUi({ selectedClipId: null })
+  if (selectedSceneId && !scenes.some((s) => s.id === selectedSceneId)) setUi({ selectedSceneId: null })
 }
 
 /**
@@ -99,6 +104,29 @@ export function editRanking(recipe: (draft: Ranking) => void, mergeKey?: string)
   remember(before, mergeKey)
   restore({ ...before, ranking: after })
   return true
+}
+
+/**
+ * Changes several parts in one undo step, e.g. a stock clip placed for a scene (the clips and
+ * the scene). `change` returns the parts it changes, or null for "nothing to do".
+ */
+export function editTimeline(change: (before: TimelineSnapshot) => Partial<TimelineSnapshot> | null, mergeKey?: string): boolean {
+  const before = snapshot()
+  const changes = change(before)
+  if (!changes) return false
+  const after = { ...before, ...changes }
+  if (JSON.stringify(after) === JSON.stringify(before)) return false
+  remember(before, mergeKey)
+  restore(after)
+  return true
+}
+
+/** Applies a change to the scenes (return null for "nothing to do"). See remember for `mergeKey`. */
+export function editScenes(change: (scenes: readonly Scene[]) => Scene[] | null, mergeKey?: string): boolean {
+  return editTimeline((before) => {
+    const scenes = change(before.scenes)
+    return scenes && { scenes }
+  }, mergeKey)
 }
 
 export function undo() {

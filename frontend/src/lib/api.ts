@@ -135,6 +135,17 @@ export interface AiGeneration {
   workflow: string
   basedOn: string | null
   generatedAt: string
+  /** Set on a scene's preview (the Scenes tab): which project and scene, and the job that made it. */
+  type?: 'preview'
+  projectId?: string
+  sceneId?: string
+  shotId?: string
+}
+
+/** The project and scene a preview is made for. */
+export interface SceneRef {
+  projectId: string
+  sceneId: string
 }
 
 export interface ComfyStatus {
@@ -165,6 +176,8 @@ export interface ShotJob {
   fps: number
   workflow: string
   basedOn: string | null
+  /** Set for a scene's previews; the Scenes tab shows those, not the Shots list. */
+  scene?: SceneRef | null
   status: ShotStatus
   /** Jobs ahead of this one in ComfyUI's queue (0 when it's running). */
   queuePosition: number | null
@@ -184,6 +197,7 @@ export interface ShotRequest {
   variations: number
   seed?: number
   basedOn?: string
+  scene?: SceneRef
 }
 
 /** A stock video source that needs an API key in .env. */

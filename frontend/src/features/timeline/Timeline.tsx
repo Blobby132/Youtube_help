@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { AudioLines, Captions, Film, ListOrdered, Redo2, RefreshCw, Scissors, Trash2, Undo2 } from 'lucide-react'
+import { AudioLines, Captions, Clapperboard, Film, ListOrdered, Redo2, RefreshCw, Scissors, Trash2, Undo2 } from 'lucide-react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useEffect, useRef } from 'react'
 import { Button } from '../../components/ui/Button'
@@ -13,6 +13,7 @@ import { CaptionsLane } from './CaptionsLane'
 import { ClipSettings } from './ClipSettings'
 import { RanksLane } from './RanksLane'
 import { Ruler } from './Ruler'
+import { ScenesLane } from './ScenesLane'
 import { TIMELINE_ORIGIN_PX, pixelsPerSecond } from './scale'
 import styles from './Timeline.module.css'
 import { deleteSelected, fitClips, redo, splitAtPlayhead, undo, useTimelineHistory } from './timelineEdits'
@@ -20,7 +21,7 @@ import { VideoLane } from './VideoLane'
 import { VoiceoverLane } from './VoiceoverLane'
 
 interface TrackInfo {
-  id: 'video' | 'voiceover' | 'captions' | 'ranks'
+  id: 'video' | 'scenes' | 'voiceover' | 'captions' | 'ranks'
   label: string
   icon: LucideIcon
   empty: string
@@ -28,6 +29,7 @@ interface TrackInfo {
 
 const TRACKS: TrackInfo[] = [
   { id: 'video', label: 'Video', icon: Film, empty: '' },
+  { id: 'scenes', label: 'Scenes', icon: Clapperboard, empty: 'Scenes from the Scenes tab' },
   { id: 'voiceover', label: 'Voiceover', icon: AudioLines, empty: 'Generate, record or upload a voiceover' },
   { id: 'captions', label: 'Captions', icon: Captions, empty: 'Generate captions in the Captions tab' },
   { id: 'ranks', label: 'Ranks', icon: ListOrdered, empty: 'Ranking overlays from the Ranking tab' },
@@ -59,6 +61,7 @@ export function Timeline() {
   const hasVoiceover = useProject((p) => p.voiceover !== null)
   const hasCaptions = useProject((p) => p.captions.words.length > 0)
   const hasRanks = useProject((p) => p.ranking.entries.some((e) => e.time !== null))
+  const hasScenes = useProject((p) => p.scenes.length > 0)
   const zoom = useUi((s) => s.zoom)
   const playhead = useUi((s) => s.playhead)
   const selectedId = useUi((s) => s.selectedClipId)
@@ -70,8 +73,8 @@ export function Timeline() {
   const visibleSeconds = Math.max(Math.max(duration, lastClipEnd) + TAIL_SECONDS, MIN_VISIBLE_SECONDS)
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // Delete removes the selected clip; Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo clip and
-  // ranking edits.
+  // Delete removes the selected clip; Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo clip,
+  // ranking and scene edits.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey
@@ -209,6 +212,8 @@ export function Timeline() {
                   <CaptionsLane pxPerSecond={pxPerSecond} />
                 ) : id === 'ranks' && hasRanks ? (
                   <RanksLane pxPerSecond={pxPerSecond} />
+                ) : id === 'scenes' && hasScenes ? (
+                  <ScenesLane pxPerSecond={pxPerSecond} />
                 ) : (
                   <span className={styles.trackEmpty}>{empty}</span>
                 )}

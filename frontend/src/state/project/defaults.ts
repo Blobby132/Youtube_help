@@ -1,5 +1,6 @@
 import { newId } from '../../lib/ids'
 import { timesFromClipLinks } from '../../features/ranking/rankEntries'
+import { normalizePreviews, normalizeScenes } from '../../features/scenes/sceneOps'
 import { PROJECT_VERSION, type Project, type RankEntry, type TimeRange, type TimelineClip } from './types'
 
 export const DEFAULT_VOICE_ID = 'af_heart'
@@ -54,6 +55,8 @@ export function createProject(name = 'Untitled short'): Project {
       entries: [],
       style: { fontId: 'anton', size: 200, numberColor: '#ffd60a', labelColor: '#ffffff' },
     },
+    scenes: [],
+    scenePreviews: [],
   }
 }
 
@@ -106,6 +109,10 @@ export function normalizeProject(raw: unknown): Project {
     .filter((clip): clip is TimelineClip => clip !== null)
     .sort((a, b) => a.start - b.start)
   project.ranking.entries = normalizeEntries(project.ranking.entries, project.clips)
+  // Scenes came after version 2 without changing anything older, so they need no version of
+  // their own: a project without them simply has none.
+  project.scenes = normalizeScenes(raw.scenes)
+  project.scenePreviews = normalizePreviews(raw.scenePreviews)
   project.version = PROJECT_VERSION
   return project
 }
