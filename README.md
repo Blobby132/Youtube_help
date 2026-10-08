@@ -19,14 +19,15 @@ The app is built in stages. Each stage is tested before the next one starts.
 | 2 | Script panel and voiceover (Kokoro AI read, record, upload) | ✅ done |
 | 3 | Captions with faster-whisper and caption preview | ✅ done |
 | 4 | Media tab (Pexels and uploads) and timeline | ✅ done |
-| 5 | Canvas & title, Ranking tab | next |
-| 6 | FFmpeg render | |
+| 5 | Canvas & title, Ranking tab | ✅ done |
+| 6 | FFmpeg render | next |
 
 Working now: the full layout, autosaved projects, the script box, all three ways to make a
 voiceover (AI read, recording, upload) plus background music, word-timed captions, a media
-library shared by all projects (Pixabay and Pexels search, your own clips and images, Auto-fill), and a
-timeline whose clips, voiceover and captions play together in the preview. Render (stage 6)
-is shown but disabled.
+library shared by all projects (Pixabay and Pexels search, your own clips and images, Auto-fill,
+Generate shot), a timeline whose clips, voiceover and captions play together in the preview,
+clips that fill the frame or fit inside it over a blurred or solid background, a title, and
+ranking overlays for countdown videos. Render (stage 6) is shown but disabled.
 
 ## Windows setup
 
@@ -332,15 +333,57 @@ the timeline (after asking); **Undo** brings them back.
   clip, and **Fit to voiceover** closes every gap and ends the last clip with the voiceover. It
   keeps your cuts: each clip runs until the next one starts, using more of its footage, and
   plays slower if it runs out. **Undo/Redo** (Ctrl+Z, Ctrl+Shift+Z) cover all clip edits.
-- **9:16 crop.** Every clip fills the 1080×1920 frame and is cropped. Select a clip and use
+- **9:16 crop.** A clip fills the 1080×1920 frame and is cropped. Select a clip and use
   **Crop position** in the **Clip settings** card beside the preview (left–right for wide
   clips, top–bottom for tall ones), or drag the picture in the preview. On a narrow window the
   clip settings move to the timeline toolbar. Images can be any length.
+- **Fit inside.** For a clip that isn't 9:16, **Frame** in **Clip settings** switches between
+  **Fill** (cropped, as above) and **Fit inside**: the whole picture shows, as large as fits,
+  with the background from the **Canvas & title** tab around it. Its timeline clip shows a
+  **Fit** badge. Split keeps the setting, and Undo covers it.
 - **Clip audio** is muted. In **Clip settings**, click **Muted** to keep its sound under the
   voiceover (useful for sound effects in AI clips), with its own volume. You can also change a
   clip's speed there.
 - **Preview.** Play shows the clips, voiceover and captions together, kept in step with the
   voiceover.
+
+## Canvas & title
+
+- **Background** fills the frame around clips set to **Fit inside**: a **blurred** copy of the
+  clip (the strength is the blur radius in frame pixels) or a **solid colour**. Clips set to
+  Fill cover it, and stretches with no clip stay black.
+- **Title**: an optional headline at the top of the video (from 150 pixels down, below
+  YouTube's own buttons), with its font, size and colour, and a full-width **background bar**
+  in its own colour (without the bar, the text gets an outline). Show it for the **whole
+  video** or for its **first seconds** (1 to 15). Long titles wrap onto more lines.
+
+Captions, the title and the ranking are drawn over the clips in the preview, captions on top.
+Their positions are shared numbers (`frontend/src/features/preview/captionLayout.ts` and
+`frontend/src/features/canvas/overlayLayout.ts`) so the render places them the same way.
+
+## Ranking
+
+The **Ranking** tab is for countdown videos like "Top 5 …". Each entry shows a big rank number
+("#3") and its label at the top of the video while its clip plays, under the title if there
+is one.
+
+- **Add entry** links the new entry to the selected clip, or else the clip under the playhead,
+  or else the next clip after the ones already linked. Pick or change an entry's clip in its
+  list; a clip can belong to one entry only.
+- Entries are listed **in the order they play**. Drag them by the handle, or use the arrows, to
+  reorder. **Count down** numbers the first entry #N and the last #1; **Count up** starts at
+  #1. Click an entry's number to show it in the preview.
+- The **Ranks** track on the timeline shows each entry over its clip. Click one to open the
+  Ranking tab.
+- **Look**: the font, the number's size (the label is about a third of it) and the colours of
+  the number and the label.
+- **Warnings** in the list: an entry without a clip, an entry whose clip was deleted or replaced
+  (for example by Auto-fill; Undo brings the clip and the link back), and an entry whose clip
+  plays before the one above it, so the count would run out of order.
+
+An entry is linked to one clip, so it shows for that clip's length. If one item is narrated
+over several clips (Auto-fill makes one clip per sentence), the rank shows over the first
+clip you link, and Split leaves the link on the first half.
 
 ### AI disclosure
 
@@ -384,12 +427,15 @@ on the real `comfy\ltx_t2v_api.json`, submitting variations, queue positions, li
 saving finished shots to the library, failures, cancelling, a lost job, an unreachable ComfyUI
 and picking up jobs again after a restart.
 `npm run test:frontend` runs the frontend unit tests (caption grouping and layout, the
-out-of-date check, every timeline edit, snapping, undo, the 9:16 crop, Auto-fill timing and the
-ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
+out-of-date check, every timeline edit, snapping, undo, the 9:16 crop and Fit inside, the title
+and ranking layout, rank numbers and warnings, upgrading older projects, Auto-fill timing and
+the ComfyUI file-name check). `npm run test:e2e` drives the real frontend in Chromium against a
 fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
 splitting, the crop control, Pexels and Pixabay results, the source switch, the rate-limit
 countdown, imports with the AI flag, and Generate shot (the dialog, the jobs list across a
-reload, cancelling, and an AI clip's Copy prompt, Generate again and Final quality) (on a new machine, first
+reload, cancelling, and an AI clip's Copy prompt, Generate again and Final quality), Fit inside
+over a solid and a blurred background, the title bar and its timing, and ranking entries (linking,
+reordering, warnings, the overlay in the preview, saving) (on a new machine, first
 run `npx playwright install chromium` once inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
 the frontend.

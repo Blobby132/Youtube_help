@@ -267,6 +267,11 @@ export function VideoLane({ pxPerSecond }: { pxPerSecond: number }) {
                       </span>
                     )}
                     {item?.lowRes && <span className={styles.lowBadge} title={`${item.width}×${item.height}: scaled up to fill the frame`}>Low res</span>}
+                    {clip.fit === 'inside' && (
+                      <span className={styles.badge} title="Fit inside: the whole picture, with the background around it">
+                        Fit
+                      </span>
+                    )}
                     {clip.speed !== 1 && <span className={styles.badge}>{+clip.speed.toFixed(2)}×</span>}
                     {clip.keepAudio && <Volume2 size={11} aria-label="Clip audio on" />}
                   </span>

@@ -86,7 +86,7 @@ describe('adding clips', () => {
 
   it('starts muted, centred and at normal speed', () => {
     const [added] = insertClip([], media, 0, 5, 'n')
-    expect(added).toMatchObject({ inPoint: 0, speed: 1, cropX: 0.5, cropY: 0.5, keepAudio: false })
+    expect(added).toMatchObject({ inPoint: 0, speed: 1, cropX: 0.5, cropY: 0.5, fit: 'fill', keepAudio: false })
   })
 })
 
@@ -162,6 +162,14 @@ describe('split, speed', () => {
     expect(layout(result)).toEqual(['a@1-2', 'a2@2-5'])
     expect(result[1].inPoint).toBe(4)
     expect(splitClip([clip('a', 1, 4)], 'a', 1.05, 'x')).toBeNull()
+  })
+
+  it('both halves of a split keep the crop and "Fit inside"', () => {
+    const result = splitClip([clip('a', 0, 4, { fit: 'inside', cropX: 0.2 })], 'a', 2, 'a2')!
+    expect(result.map((c) => [c.fit, c.cropX])).toEqual([
+      ['inside', 0.2],
+      ['inside', 0.2],
+    ])
   })
 
   it('slowing a clip makes it longer, up to the next clip', () => {

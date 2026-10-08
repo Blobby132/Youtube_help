@@ -5,16 +5,20 @@ import { loadFont, onFontLoaded } from '../../lib/fonts'
 import { useProjectStore } from '../../state/project/store'
 import type { CaptionWord } from '../../state/project/types'
 import { useUi } from '../../state/ui'
+import { hasTitle, rankTop, titleShown } from '../canvas/overlayLayout'
 import { type CaptionGroup, groupAt, groupCaptions } from '../captions/captionGroups'
 import { useLibrary } from '../library/libraryStore'
+import { rankAt } from '../ranking/rankEntries'
 import { clipPlayer } from './clipPlayer'
-import { coverRect } from './cover'
 import { drawCaption } from './drawCaptions'
+import { drawClip } from './drawClip'
+import { drawRank, drawTitle, measureTitle } from './drawOverlays'
 
 /**
- * Draws the preview frame at the playhead: the clip (filled to 9:16 and cropped), then
- * captions. Redraws (at most once per animation frame) when the playhead, the project, the
- * library, a font or a clip's video frame changes.
+ * Draws the preview frame at the playhead: the clip (filled and cropped to 9:16, or fitted
+ * inside over the background), the title, the ranking overlay, then captions. Redraws (at
+ * most once per animation frame) when the playhead, the project, the library, a font or a
+ * clip's video frame changes.
  */
 export function usePreviewRenderer(canvasRef: RefObject<HTMLCanvasElement | null>) {
   useEffect(() => {
@@ -28,7 +32,7 @@ export function usePreviewRenderer(canvasRef: RefObject<HTMLCanvasElement | null
 
     const draw = () => {
       frame = 0
-      const { captions, clips } = useProjectStore.getState().project
+      const { captions, clips, canvas: settings, ranking } = useProjectStore.getState().project
       const { playhead: time, playing } = useUi.getState()
       const items = useLibrary.getState().items
       if (library?.items !== items) library = { items, byId: new Map(items.map((item) => [item.id, item])) }
@@ -38,9 +42,18 @@ export function usePreviewRenderer(canvasRef: RefObject<HTMLCanvasElement | null
 
       clipPlayer.sync(time, playing, clips, library.byId)
       const shown = clipPlayer.frame(time, clips, library.byId)
-      if (shown && shown !== 'missing') {
-        const { sx, sy, sw, sh } = coverRect(shown.width, shown.height, canvas.width, canvas.height, shown.clip.cropX, shown.clip.cropY)
-        ctx.drawImage(shown.source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+      if (shown && shown !== 'missing') drawClip(ctx, shown, settings.background)
+
+      const { title } = settings
+      const titleLayout = hasTitle(title) ? measureTitle(ctx, title) : null
+      if (titleLayout) {
+        void loadFont(title.fontId).catch(() => undefined)
+        if (titleShown(title, time)) drawTitle(ctx, title, titleLayout)
+      }
+      const rank = rankAt(ranking, clips, time)
+      if (rank) {
+        void loadFont(ranking.style.fontId).catch(() => undefined)
+        drawRank(ctx, rank.entry, rank.rank, ranking.style, rankTop(titleLayout?.bottom ?? null))
       }
 
       if (captions.enabled && captions.words.length) {

@@ -1,10 +1,11 @@
-import { Crop, Gauge, Move, Volume2, VolumeX } from 'lucide-react'
+import { Crop, Gauge, Move, Shrink, Volume2, VolumeX } from 'lucide-react'
 import { useId } from 'react'
+import { Segmented } from '../../components/ui/Segmented'
 import { Range } from '../../components/ui/Slider'
 import { formatClipLength } from '../../lib/time'
 import { useProject } from '../../state/project/store'
-import { CANVAS } from '../../state/project/types'
-import { useUi } from '../../state/ui'
+import { CANVAS, type ClipFit } from '../../state/project/types'
+import { setUi, useUi } from '../../state/ui'
 import { useLibrary } from '../library/libraryStore'
 import { cropAxis } from '../preview/cover'
 import { playback } from '../preview/playback'
@@ -16,12 +17,17 @@ const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 
 const HINT = 'Or drag the picture in the preview to move the crop.'
 
+const FITS = [
+  { value: 'fill', label: 'Fill', title: 'Fill the 9:16 frame and crop the edges' },
+  { value: 'inside', label: 'Fit inside', title: 'Show the whole picture, with the background around it' },
+] as const satisfies readonly { value: ClipFit; label: string; title: string }[]
+
 interface ClipSettingsProps {
   /** 'card' beside the preview; 'bar' in the timeline toolbar when there's no room for the card. */
   variant: 'card' | 'bar'
 }
 
-/** Crop position, speed and audio of the selected clip. */
+/** Fill or fit inside, crop position, speed and audio of the selected clip. */
 export function ClipSettings({ variant }: ClipSettingsProps) {
   const cropId = useId()
   const selectedId = useUi((s) => s.selectedClipId)
@@ -34,20 +40,41 @@ export function ClipSettings({ variant }: ClipSettingsProps) {
     return card ? (
       <aside className={styles.card} aria-label="Clip settings">
         <h3 className={styles.label}>Clip settings</h3>
-        <p className={styles.hint}>Select a clip on the timeline to set its crop position, speed and audio.</p>
+        <p className={styles.hint}>Select a clip on the timeline to set how it fits the frame, its speed and audio.</p>
       </aside>
     ) : (
-      <p className={styles.barHint}>Select a clip to set its crop position, speed and audio</p>
+      <p className={styles.barHint}>Select a clip to set how it fits the frame, its speed and audio</p>
     )
   }
 
+  // Only a clip that isn't exactly 9:16 can be cropped or fitted inside.
   const axis = item ? cropAxis(item.width, item.height, CANVAS.width, CANVAS.height) : null
+  const inside = axis !== null && clip.fit === 'inside'
   const value = axis === 'y' ? clip.cropY : clip.cropX
   const [from, to] = axis === 'y' ? ['Top', 'Bottom'] : ['Left', 'Right']
   const speeds = SPEEDS.includes(clip.speed as (typeof SPEEDS)[number]) ? SPEEDS : [...SPEEDS, clip.speed].sort((a, b) => a - b)
   const setCrop = (v: number) => updateClip(clip.id, axis === 'y' ? { cropY: v } : { cropX: v }, 'crop')
 
-  const crop = (
+  const fit = axis && (
+    <div className={styles.group}>
+      <span className={styles.groupLabel}>
+        <Shrink size={12} aria-hidden /> {card && 'Frame'}
+      </span>
+      <Segmented label="Frame" options={FITS} value={clip.fit} onChange={(next) => updateClip(clip.id, { fit: next })} />
+      {card && inside && (
+        <p className={styles.hint}>
+          <span>
+            The whole picture shows, with the background around it.{' '}
+            <button type="button" className={styles.inlineLink} onClick={() => setUi({ rightTab: 'canvas' })}>
+              Background settings
+            </button>
+          </span>
+        </p>
+      )}
+    </div>
+  )
+
+  const crop = !inside && (
     <div className={styles.group} data-testid="crop-control">
       <label className={styles.groupLabel} htmlFor={cropId}>
         <Crop size={12} aria-hidden /> {card ? 'Crop position' : 'Crop'}
@@ -66,8 +93,8 @@ export function ClipSettings({ variant }: ClipSettingsProps) {
               <span>{to}</span>
             </div>
           )}
-          <p className={styles.hint}>
-            <Move size={11} aria-hidden /> {card ? HINT : 'or drag the preview'}
+          <p className={styles.hint} title={card ? undefined : HINT}>
+            <Move size={11} aria-hidden /> {card && HINT}
           </p>
           {card && !inPreview && (
             <button type="button" className={styles.link} onClick={() => playback.seek(clip.start + Math.min(0.5, clip.duration / 2))}>
@@ -138,6 +165,7 @@ export function ClipSettings({ variant }: ClipSettingsProps) {
   if (!card) {
     return (
       <div className={styles.bar} aria-label="Clip settings" title={item?.name}>
+        {fit}
         {crop}
         {speed}
         {audio}
@@ -156,6 +184,7 @@ export function ClipSettings({ variant }: ClipSettingsProps) {
           {item.width}×{item.height} · {formatClipLength(clip.duration)} on the timeline
         </p>
       )}
+      {fit}
       {crop}
       {speed}
       {audio}

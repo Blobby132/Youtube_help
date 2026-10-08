@@ -6,7 +6,9 @@ import { Segmented } from '../../components/ui/Segmented'
 import { Slider } from '../../components/ui/Slider'
 import { pixels } from '../../lib/format'
 import { updateProject, useProject } from '../../state/project/store'
-import type { CanvasBackground, TitleSettings } from '../../state/project/types'
+import { CANVAS, type CanvasBackground, type TitleSettings } from '../../state/project/types'
+import { useLibrary } from '../library/libraryStore'
+import { cropAxis } from '../preview/cover'
 import styles from './CanvasPanel.module.css'
 
 const BACKGROUND_MODES = [
@@ -22,6 +24,7 @@ const TITLE_TIMING = [
 export function CanvasPanel() {
   const background = useProject((p) => p.canvas.background)
   const title = useProject((p) => p.canvas.title)
+  const insideCount = useInsideClipCount()
 
   const setBackground = (patch: Partial<CanvasBackground>) =>
     updateProject((p) => {
@@ -34,7 +37,14 @@ export function CanvasPanel() {
 
   return (
     <>
-      <Section label="Background" hint="Fills the frame behind clips that don't cover the full 9:16 canvas.">
+      <Section
+        label="Background"
+        hint={
+          insideCount
+            ? `Fills the frame around clips set to Fit inside (${insideCount} on the timeline).`
+            : 'Fills the frame around clips set to Fit inside. Clips fill the frame unless you pick Fit inside in Clip settings.'
+        }
+      >
         <Segmented
           label="Background"
           options={BACKGROUND_MODES}
@@ -59,7 +69,7 @@ export function CanvasPanel() {
 
       <Section
         label="Title"
-        hint="Optional headline pinned to the top of the video."
+        hint="Optional headline at the top of the video. A ranking shows under it."
         action={<Checkbox checked={title.enabled} onChange={(enabled) => setTitle({ enabled })} />}
       >
         <fieldset className={styles.fieldset} disabled={!title.enabled}>
@@ -131,4 +141,15 @@ export function CanvasPanel() {
       </Section>
     </>
   )
+}
+
+/** Clips on the timeline that show the background: set to Fit inside and not exactly 9:16. */
+function useInsideClipCount() {
+  const clips = useProject((p) => p.clips)
+  const items = useLibrary((s) => s.items)
+  return clips.filter((clip) => {
+    if (clip.fit !== 'inside') return false
+    const item = items.find((i) => i.id === clip.mediaId)
+    return item !== undefined && cropAxis(item.width, item.height, CANVAS.width, CANVAS.height) !== null
+  }).length
 }

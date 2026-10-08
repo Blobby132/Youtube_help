@@ -47,7 +47,12 @@ export function createProject(name = 'Untitled short'): Project {
         seconds: 3,
       },
     },
-    ranking: { enabled: true, direction: 'down', entries: [] },
+    ranking: {
+      enabled: true,
+      direction: 'down',
+      entries: [],
+      style: { fontId: 'anton', size: 200, numberColor: '#ffd60a', labelColor: '#ffffff' },
+    },
   }
 }
 
@@ -69,12 +74,13 @@ function withDefaults<T>(defaults: T, value: unknown): T {
   return merged as T
 }
 
-/** Settings a clip gets when it's added: centred crop, muted, normal speed. */
+/** Settings a clip gets when it's added: fills the frame with a centred crop, muted, normal speed. */
 export const CLIP_DEFAULTS = {
   inPoint: 0,
   speed: 1,
   cropX: 0.5,
   cropY: 0.5,
+  fit: 'fill',
   keepAudio: false,
   volume: 0.5,
 } as const satisfies Partial<TimelineClip>

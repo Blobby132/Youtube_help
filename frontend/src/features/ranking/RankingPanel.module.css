@@ -1,0 +1,162 @@
+.fieldset {
+  display: contents;
+}
+
+.fieldset:disabled > * {
+  opacity: 0.5;
+}
+
+/* The fieldset already dims everything; don't dim disabled controls twice. */
+.fieldset:disabled :disabled {
+  opacity: 1;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+}
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px 40px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px;
+  padding: 6px 4px 6px 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dragging {
+  opacity: 0.45;
+}
+
+.above::before,
+.below::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.above::before {
+  top: -4px;
+}
+
+.below::after {
+  bottom: -4px;
+}
+
+.grip {
+  display: grid;
+  place-items: center;
+  height: 30px;
+  color: var(--text-faint);
+  cursor: grab;
+}
+
+.grip:hover {
+  color: var(--text);
+}
+
+.rank {
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.rank:disabled {
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.rank:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+}
+
+.input::placeholder {
+  color: var(--text-faint);
+}
+
+.select {
+  height: 26px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.problem {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--warning) 85%, white);
+}
+
+.problem svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.iconButton {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.iconButton:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.iconButton:disabled {
+  opacity: 0.3;
+}
