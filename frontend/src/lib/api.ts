@@ -231,6 +231,57 @@ export interface AutofillSentence {
   error: string | null
 }
 
+export interface RenderQuality {
+  id: 'best' | 'gpu'
+  label: string
+  description: string
+}
+
+/** A timeline clip that uses AI-generated footage. */
+export interface AiClip {
+  clipId: string
+  mediaId: string
+  name: string
+  source: MediaSource
+  start: number
+  duration: number
+}
+
+export interface RenderWarning {
+  kind: 'gaps' | 'past-voiceover' | 'captions-stale' | 'missing-media' | 'low-res' | 'too-long'
+  message: string
+}
+
+/** What the backend found before a render: the output, the qualities this PC has, and problems. */
+export interface RenderCheck {
+  duration: number
+  frames: number
+  fps: { num: number; den: number; label: string }
+  width: number
+  height: number
+  qualities: RenderQuality[]
+  warnings: RenderWarning[]
+  /** Problems that stop the render (no voiceover, no clips). */
+  blockers: string[]
+  containsAi: boolean
+  aiClips: AiClip[]
+}
+
+export interface RenderResult {
+  /** Full path of the MP4 on this PC. */
+  file: string
+  name: string
+  folder: string
+  size: number
+  duration: number
+  width: number
+  height: number
+  fps: string
+  quality: string
+  containsAi: boolean
+  aiClips: AiClip[]
+}
+
 export interface Voice {
   id: string
   name: string
@@ -297,6 +348,20 @@ export const api = {
   dismissShot: (jobId: string) =>
     request<{ deleted: string }>(`/api/comfy/shots/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
   clearShots: () => request<{ jobs: ShotJob[] }>('/api/comfy/shots/clear', json('POST', {})),
+  renderCheck: (project: Project) => request<RenderCheck>('/api/render/check', json('POST', { project })),
+  startRender: (
+    body: { project: Project; quality: RenderQuality['id']; fps: { num: number; den: number }; frames: number },
+    manifest: { first: number; end: number; size: number }[],
+    overlays: Blob,
+  ) => {
+    const form = new FormData()
+    form.append('request', JSON.stringify(body))
+    form.append('manifest', JSON.stringify(manifest))
+    if (manifest.length) form.append('overlays', overlays, 'overlays.bin')
+    return request<Job<RenderResult>>('/api/render', { method: 'POST', body: form })
+  },
+  cancelRender: (jobId: string) => request<{ cancelled: string }>(`/api/render/${encodeURIComponent(jobId)}/cancel`, json('POST', {})),
+  openRender: (file: string, action: 'play' | 'folder') => request<{ opened: string }>('/api/render/open', json('POST', { file, action })),
   getPronunciations: () => request<{ entries: PronunciationEntry[] }>('/api/pronunciations'),
   savePronunciations: (entries: PronunciationEntry[]) =>
     request<{ entries: PronunciationEntry[] }>('/api/pronunciations', json('PUT', { entries })),

@@ -20,14 +20,14 @@ The app is built in stages. Each stage is tested before the next one starts.
 | 3 | Captions with faster-whisper and caption preview | ✅ done |
 | 4 | Media tab (Pexels and uploads) and timeline | ✅ done |
 | 5 | Canvas & title, Ranking tab | ✅ done |
-| 6 | FFmpeg render | next |
+| 6 | FFmpeg render | ✅ done |
 
 Working now: the full layout, autosaved projects, the script box, all three ways to make a
 voiceover (AI read, recording, upload) plus background music, word-timed captions, a media
 library shared by all projects (Pixabay and Pexels search, your own clips and images, Auto-fill,
 Generate shot), a timeline whose clips, voiceover and captions play together in the preview,
-clips that fill the frame or fit inside it over a blurred or solid background, a title, and
-ranking overlays for countdown videos. Render (stage 6) is shown but disabled.
+clips that fill the frame or fit inside it over a blurred or solid background, a title,
+ranking overlays for countdown videos, and the final render to a Shorts-ready MP4.
 
 ## Windows setup
 
@@ -401,11 +401,40 @@ clip; opening one gives each entry its clip's span, so the video looks the same.
 
 When a project's timeline contains a clip flagged AI-generated, the top bar says **Contains AI**
 (with the number of clips) and the **Open project** list marks the project. YouTube asks you to
-disclose realistic AI-generated or altered content when you upload; the export (stage 6) will
-remind you. The flag is stored once, on the library clip, so changing it there updates every
+disclose realistic AI-generated or altered content when you upload; the finished render
+reminds you. The flag is stored once, on the library clip, so changing it there updates every
 project that uses the clip. The backend answers the same question for any saved project at
-`GET /api/projects/<id>/disclosure` (`app/library/usage.py`, `ai_clips`), which the render will
-use.
+`GET /api/projects/<id>/disclosure` (`app/library/usage.py`, `ai_clips`), and the render asks
+it too.
+
+## Render
+
+**Render** in the top bar makes the final video with FFmpeg: 1080×1920 H.264 (yuv420p) with
+AAC audio at 48 kHz, ready to stream (faststart). It's saved as
+`exports\<project name>\<project name>.mp4`; rendering again adds `(2)`, `(3)`, ... so earlier
+videos are kept. Set `EXPORTS_DIR` in `.env` to put them somewhere else.
+
+- **Checks first.** Before it starts, the dialog lists anything worth knowing: gaps in the
+  timeline (they render black), clips that run past the end of the voiceover (cut off),
+  out-of-date captions, missing media, low-resolution clips that will be scaled up, and a
+  video longer than 3 minutes (the Shorts limit). They're warnings: **Render anyway** goes ahead.
+- **Quality.** **Best quality** is libx264 at CRF 18 on the CPU. **Fast (GPU)** uses AMD's
+  hardware encoder (h264_amf); it's only offered when your FFmpeg has it and a test encode
+  works, which the backend checks once when it starts.
+- **Frame rate.** Clips with different rates (24, 25, 30 fps) are converted to one: 30 fps,
+  unless every clip shares another standard rate (then that one, e.g. 25 fps).
+- **Matches the preview.** Trims, speed, the Fill crop, Fit inside over the blurred or solid
+  background, the title (and its time limit), ranking overlays with their times, captions with
+  the spoken-word highlight, the voiceover, music and clip audio at their volumes. The text is
+  drawn by the preview's own code with the same font files, one transparent image per change
+  (a new word, rank or title), and FFmpeg lays each image over exactly its frames, so a caption
+  can't wrap differently in the video. Colours follow the browser too: a video with no colour
+  information is read as BT.709 when it's HD, as browsers do.
+- **In the background.** A progress bar, the elapsed time and **Cancel render** (which deletes
+  the half-made file). You can close the dialog and keep working; the Render button shows the
+  progress. When it's done: **Play** opens it in your video player, **Open folder** shows it in
+  Explorer, and if the video contains AI-generated clips you're reminded to mark it as altered
+  or synthetic content when you upload it to YouTube.
 
 ## Installing FFmpeg
 
@@ -437,7 +466,11 @@ are downloaded, real speech generation and a Kokoro → Whisper → captions rou
 shot is tested against a fake ComfyUI server (its HTTP and websocket API): the workflow mapping
 on the real `comfy\ltx_t2v_api.json`, submitting variations, queue positions, live progress,
 saving finished shots to the library, failures, cancelling, a lost job, an unreachable ComfyUI
-and picking up jobs again after a restart.
+and picking up jobs again after a restart. The render tests render small projects with real
+FFmpeg and check the MP4: length, size, frame rate (mixed 24/25/30 fps → 30, all 25 → 25),
+codecs, 48 kHz audio and clip audio, faststart, and the picture at chosen frames (the Fill crop,
+Fit inside over a solid and a blurred background, gaps, trims, speed, overlays at exactly their
+frames), plus the checks, file names, cancelling and the render API.
 `npm run test:frontend` runs the frontend unit tests (caption grouping and layout, the
 out-of-date check, every timeline edit, snapping, undo, the 9:16 crop and Fit inside, the title
 and ranking layout, rank numbers, warnings and time ranges, typed times, undo and redo of every
@@ -450,8 +483,13 @@ reload, cancelling, and an AI clip's Copy prompt, Generate again and Final quali
 over a solid and a blurred background, the title bar and its timing, and ranking entries (timing
 from the selection and the sentence, dragging and snapping edges, typed times and their
 messages, Undo and Redo of ranking edits from the buttons and the keyboard, clip edits leaving
-them alone, reordering, warnings, the overlay in the preview, saving) (on a new machine, first
-run `npx playwright install chromium` once inside the `frontend` folder). CI runs it on the newest Python (3.14) only and keeps
+them alone, reordering, warnings, the overlay in the preview, saving), and the render dialog
+(warnings, quality choice, progress, cancel, the finished screen) (on a new machine, first
+run `npx playwright install chromium` once inside the `frontend` folder).
+`npm --prefix frontend run test:render` renders a project for real (the backend, FFmpeg and
+Chromium) and compares frames of the MP4 with the preview canvas at chosen times: the whole
+picture, the rank number and the highlighted caption word must be where the layout puts them
+and where the preview drew them. CI runs the tests on the newest Python (3.14) only and keeps
 the pronunciation samples as a downloadable artifact, plus a lint and type-checked build of
 the frontend.
 
@@ -473,20 +511,23 @@ backend/                FastAPI app (Python)
   app/stock/            what both share: the file choice, orientation, downloads
   app/autofill/         search words per sentence and one clip per sentence
   app/mix/              background music
+  app/render/           the final render: plan and checks, FFmpeg command, encoders, API
   tests/                pytest suite
 frontend/               React + TypeScript + Vite
   src/components/ui/    shared controls (buttons, tabs, sliders, alerts, ...)
   src/features/         one folder per feature: script, voiceover, mix, media, library, generate,
-                        ranking, captions, canvas, preview, timeline, projects, topbar
+                        ranking, captions, canvas, preview, render, timeline, projects, topbar
   src/layout/           left and right side panels
   src/state/            project document, autosave, editor UI state
   src/styles/global.css design tokens; change --accent to re-theme the app
   e2e/                  end-to-end tests (Playwright, fake backend)
+  e2e-render/           the render test with the real backend and FFmpeg
 comfy/                  the ComfyUI workflow for Generate shot (API format)
 scripts/                setup.mjs, dev.mjs, test.mjs (plain Node, no dependencies)
 projects/               your saved projects (not committed)
 library/                the media library shared by all projects (not committed)
 data/                   app-wide data, e.g. the pronunciation list (not committed)
+exports/                finished videos, one folder per project (not committed)
 ```
 
 ## Troubleshooting

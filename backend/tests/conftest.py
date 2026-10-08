@@ -18,6 +18,7 @@ def settings(tmp_path: Path) -> Settings:
         pexels_api_key=None,
         data_dir=tmp_path / "data",
         library_dir=tmp_path / "library",
+        exports_dir=tmp_path / "exports",
     )
 
 

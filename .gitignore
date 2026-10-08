@@ -18,6 +18,7 @@ projects/*
 models/
 /data/
 /library/
+/exports/
 
 # Editors / OS
 .vscode/

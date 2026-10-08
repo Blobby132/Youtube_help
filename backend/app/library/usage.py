@@ -1,7 +1,7 @@
 """Which projects use which library items, and which timelines contain AI-generated clips.
 
 `ai_clips` is the single answer to "does this video contain AI-generated footage?": the top
-bar indicator, the project list and (in Stage 6) the export warning all ask it.
+bar indicator, the project list and the reminder after a render all ask it.
 """
 
 from __future__ import annotations

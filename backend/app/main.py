@@ -24,6 +24,8 @@ from app.pexels import router as pexels
 from app.pixabay import router as pixabay
 from app.projects import router as projects
 from app.pronunciations import router as pronunciations
+from app.render import encoders
+from app.render import router as render
 from app.voiceover import router as voiceover
 from app.voiceover.g2p import get_phonemizer
 from app.voiceover.service import get_voiceover_service
@@ -59,11 +61,14 @@ def create_app(*, warm: bool = True) -> FastAPI:
             log.info("Stock video search: %s", " and ".join(sources))
         else:
             log.info("No PIXABAY_API_KEY or PEXELS_API_KEY in .env; stock search stays off until you add one")
+        log.info("Finished videos go to: %s", settings.exports_dir)
         log.info("ComfyUI (Generate shot): %s, workflow %s", settings.comfyui_url, settings.comfy_workflow.name)
         if warm:
             threading.Thread(target=warm_up, args=(settings,), name="warm-up", daemon=True).start()
             # Shots still generating when the backend stopped: keep following them.
             get_generation_service(settings).resume()
+            # Whether "Fast (GPU)" can be offered: a quick test encode, once.
+            encoders.detect_in_background()
         yield
 
     app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
@@ -88,6 +93,7 @@ def create_app(*, warm: bool = True) -> FastAPI:
     app.include_router(pixabay.router)
     app.include_router(comfy.router)
     app.include_router(autofill.router)
+    app.include_router(render.router)
     return app
 
 

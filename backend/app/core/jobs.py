@@ -1,4 +1,4 @@
-"""Background jobs for slow work (AI voiceover, captions, downloads and imports).
+"""Background jobs for slow work (AI voiceover, captions, downloads, imports and renders).
 
 The frontend starts a job, then polls GET /api/jobs/{id} for progress. Heavy jobs (the AI
 models) run one at a time so two models never compete for memory. Media jobs (downloads,
@@ -57,7 +57,8 @@ class Job:
             }
 
 
-POOLS = {"heavy": 1, "media": 2}
+# Renders get their own worker: one at a time, and never stuck behind an AI job.
+POOLS = {"heavy": 1, "media": 2, "render": 1}
 
 
 class JobManager:
