@@ -20,6 +20,7 @@ import json
 import math
 import re
 from collections.abc import Callable
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -34,9 +35,15 @@ FIELDS = ("source", "description", "searchText", "prompt")
 SOURCES = ("ai", "stock")
 # The longest each field can be (the Scenes tab's own limits).
 LIMITS = {"description": 2000, "searchText": 100, "prompt": 4000}
+# A prompt shorter than this can't describe a shot by the guide (small models write "LTX-2.5").
+MIN_PROMPT_WORDS = 12
+# A prompt sharing this many words in a row with the guide copied its example (small models do).
+COPIED_WORDS = 8
 EPS = 1e-6
 
 Progress = Callable[[float, str], None]
+# Runs of COPIED_WORDS words in a row (to spot a prompt copied from the guide).
+Runs = AbstractSet[tuple[str, ...]]
 
 
 # The guide ---------------------------------------------------------------------------------------
@@ -93,7 +100,21 @@ def clean_text(value: str, limit: int) -> str:
     return text
 
 
-def check_texts(item: Any, where: str, errors: list[str]) -> dict[str, str] | None:
+def word_runs(text: str, size: int = COPIED_WORDS) -> Runs:
+    words = re.findall(r"[\w']+", text.lower())
+    return {tuple(words[i : i + size]) for i in range(len(words) - size + 1)}
+
+
+def prompt_problem(prompt: str, guide_runs: Runs) -> str | None:
+    """Why a prompt can't be used even though it isn't empty, or None."""
+    if len(prompt.split()) < MIN_PROMPT_WORDS:
+        return f"is too short to describe the shot: write the whole shot by the guide (at least {MIN_PROMPT_WORDS} words)"
+    if word_runs(prompt) & guide_runs:
+        return "copies the guide's example: describe this scene's own shot"
+    return None
+
+
+def check_texts(item: Any, where: str, errors: list[str], guide_runs: Runs = frozenset()) -> dict[str, str] | None:
     """The four fields of one scene (or a split's second part), or None with `errors` added."""
     if not isinstance(item, dict):
         errors.append(f"{where} isn't an object")
@@ -114,6 +135,10 @@ def check_texts(item: Any, where: str, errors: list[str]) -> dict[str, str] | No
             texts[name] = source
         else:
             texts[name] = clean_text(value, LIMITS[name])
+            problem = prompt_problem(texts[name], guide_runs) if name == "prompt" else None
+            if problem:
+                errors.append(f'{where}: "prompt" {problem}')
+                ok = False
     return texts if ok else None
 
 
@@ -130,7 +155,7 @@ class Entry:
     why: str = ""
 
 
-def check_scenes(data: Any, numbers: list[int]) -> tuple[dict[int, Entry], list[str]]:
+def check_scenes(data: Any, numbers: list[int], guide_runs: Runs = frozenset()) -> tuple[dict[int, Entry], list[str]]:
     """The answer for the scenes `numbers`, and what's wrong with it (nothing: it can be used)."""
     errors: list[str] = []
     items = data.get("scenes") if isinstance(data, dict) else data if isinstance(data, list) else None
@@ -151,7 +176,7 @@ def check_scenes(data: Any, numbers: list[int]) -> tuple[dict[int, Entry], list[
         if number in entries:
             errors.append(f"scene {number} is in the list twice")
             continue
-        texts = check_texts(item, where, errors)
+        texts = check_texts(item, where, errors, guide_runs)
         merge = item.get("mergeWithNext", False)
         if not isinstance(merge, bool):
             errors.append(f'{where}: "mergeWithNext" has to be true or false')
@@ -169,7 +194,7 @@ def check_scenes(data: Any, numbers: list[int]) -> tuple[dict[int, Entry], list[
                 errors.append(f'{where}: the split needs "startsWith", the words its second part begins with')
             else:
                 before = starts.strip()
-            second = check_texts(part, f"{where}'s second part", errors)
+            second = check_texts(part, f"{where}'s second part", errors, guide_runs)
             if second is None or before is None:
                 continue
         why = item.get("why")
@@ -181,11 +206,13 @@ def check_scenes(data: Any, numbers: list[int]) -> tuple[dict[int, Entry], list[
     return entries, errors
 
 
-def check_prompt(data: Any) -> tuple[str | None, list[str]]:
+def check_prompt(data: Any, guide_runs: Runs = frozenset()) -> tuple[str | None, list[str]]:
     prompt = data.get("prompt") if isinstance(data, dict) else None
     if not isinstance(prompt, str) or not prompt.strip():
         return None, ['the answer needs a "prompt" with the text']
-    return clean_text(prompt, LIMITS["prompt"]), []
+    text = clean_text(prompt, LIMITS["prompt"])
+    problem = prompt_problem(text, guide_runs)
+    return (None, [f'the "prompt" {problem}']) if problem else (text, [])
 
 
 # What's asked ------------------------------------------------------------------------------------
@@ -455,6 +482,7 @@ def write_scenes(client: LlmClient, guide: str, script: str, scenes: list[dict[s
     attempts = 0
     last_in_request: set[int] = set()
     system = system_message(SCENES_TASK, guide)
+    guide_runs = word_runs(guide)
     for first in range(1, total + 1, SCENES_PER_REQUEST):
         numbers = list(range(first, min(total, first + SCENES_PER_REQUEST - 1) + 1))
         last_in_request.add(numbers[-1])
@@ -474,7 +502,7 @@ def write_scenes(client: LlmClient, guide: str, script: str, scenes: list[dict[s
             client,
             messages,
             scenes_schema(len(numbers)),
-            lambda data, numbers=numbers: check_scenes(data, numbers),
+            lambda data, numbers=numbers: check_scenes(data, numbers, guide_runs),
             f"scenes {numbers[0]} to {numbers[-1]}",
             on_text,
             numbers,
@@ -512,5 +540,6 @@ def rewrite_prompt(client: LlmClient, guide: str, script: str, scene: dict[str, 
         progress(0.5 if text else 0.2, "Writing the prompt…" if text else "Thinking…")
 
     progress(0.1, f"Reading scene {scene['number']}…")
-    asked = ask(client, messages, PROMPT_SCHEMA, check_prompt, f"scene {scene['number']}'s prompt", on_text)
+    guide_runs = word_runs(guide)
+    asked = ask(client, messages, PROMPT_SCHEMA, lambda data: check_prompt(data, guide_runs), f"scene {scene['number']}'s prompt", on_text)
     return {"prompt": asked.value, "attempts": asked.attempts}

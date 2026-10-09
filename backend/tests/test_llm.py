@@ -64,7 +64,7 @@ def entry(number: int, **overrides: Any) -> dict[str, Any]:
         "source": "ai",
         "description": f"Description {number}",
         "searchText": f"search {number}",
-        "prompt": f"Close-up shot {number}, the camera stays still. Sound: a soft hum.",
+        "prompt": f"Close-up shot {number} of a round airplane window, the camera stays still while clouds drift past. Sound: a soft hum.",
         "mergeWithNext": False,
         "split": [],
         "why": "",
@@ -212,7 +212,7 @@ def test_valid_answer_fills_in_every_scene(api: TestClient, llm: FakeLlm, comfy:
 
 
 def test_invalid_answer_is_sent_back_once_then_the_valid_one_is_used(api: TestClient, llm: FakeLlm) -> None:
-    broken = answer(entry(1), entry(2, prompt=""), entry(3, source="video"))
+    broken = answer(entry(1, prompt="LTX-2.5"), entry(2, prompt=""), entry(3, source="video"))
     llm.replies = ["<think>Three scenes.</think>\nHere you go:\n" + broken, "```json\n" + VALID + "\n```"]
     job = write(api)
     assert job["status"] == "done", job
@@ -223,6 +223,7 @@ def test_invalid_answer_is_sent_back_once_then_the_valid_one_is_used(api: TestCl
     assert retry[2] == {"role": "assistant", "content": llm.requests[1]["messages"][2]["content"]}
     assert broken in retry[2]["content"]
     assert retry[3]["role"] == "user"
+    assert 'scene 1: "prompt" is too short to describe the shot: write the whole shot by the guide (at least 12 words)' in retry[3]["content"]
     assert 'scene 2: "prompt" is empty' in retry[3]["content"]
     assert 'scene 3: "source" is "video", but it has to be "ai" or "stock"' in retry[3]["content"]
     assert "Answer again with the whole JSON object for scenes 1 to 3, fixed." in retry[3]["content"]
@@ -416,7 +417,7 @@ def test_rewrite_prompt_with_ollama(settings: Settings, comfy: FakeComfy) -> Non
     fake = FakeLlm("ollama", ("qwen3:8b",)).start()
     try:
         for api in make_client(settings, fake, comfy, llm_model="qwen3:8b"):
-            fake.replies = ['{"prompt": ""}', '{"prompt": "Wide shot of a jet wing above the clouds. Sound: wind."}']
+            fake.replies = ['{"prompt": ""}', '{"prompt": "Wide shot of a jet wing above the clouds, the camera stays still as frost forms. Sound: wind."}']
             body = {
                 "script": SCRIPT,
                 "scene": {
@@ -432,7 +433,11 @@ def test_rewrite_prompt_with_ollama(settings: Settings, comfy: FakeComfy) -> Non
             job = wait_job(api, api.post("/api/llm/prompt", json=body).json())
             assert job["status"] == "done", job
             result = job["result"]
-            assert (result["prompt"], result["attempts"], result["model"]) == ("Wide shot of a jet wing above the clouds. Sound: wind.", 2, "qwen3:8b")
+            assert (result["prompt"], result["attempts"], result["model"]) == (
+                "Wide shot of a jet wing above the clouds, the camera stays still as frost forms. Sound: wind.",
+                2,
+                "qwen3:8b",
+            )
             user = messages(fake.requests[0])[1]["content"]
             assert "Visual description: “Frost on a window”\nCurrent prompt: “window frost”\nThe scene before shows: An airplane window" in user
             assert fake.requests[0]["response_format"]["json_schema"]["schema"]["required"] == ["prompt"]
@@ -448,7 +453,7 @@ def test_a_plain_server_keeps_its_model_loaded_and_says_so(settings: Settings, c
     fake = FakeLlm("openai", (MODEL,)).start()
     try:
         for api in make_client(settings, fake, comfy):
-            fake.replies = ['{"prompt": "Close-up of frost. Sound: a hiss."}']
+            fake.replies = ['{"prompt": "Close-up of frost spreading over a window pane until it covers the glass. Sound: a hiss."}']
             job = wait_job(api, api.post("/api/llm/prompt", json={"script": SCRIPT, "scene": {"number": 1, "start": 0, "end": 2.7}}).json())
             assert job["result"]["notes"][-1] == f"{MODEL} stays loaded: this OpenAI-compatible server can't be asked to unload a model."
     finally:
@@ -511,3 +516,17 @@ def test_progress_follows_the_streamed_answer(llm: FakeLlm) -> None:
     assert {"Writing scene 1 of 3…", "Writing scene 2 of 3…", "Writing scene 3 of 3…"} <= set(texts)
     fractions = [fraction for fraction, _ in seen]
     assert fractions == sorted(fractions) and fractions[-1] < 1
+
+
+def test_a_prompt_too_short_or_copied_from_the_guide_is_sent_back() -> None:
+    from app.llm.writer import check_prompt, read_guide, word_runs
+
+    guide = read_guide(GUIDE)
+    runs = word_runs(guide)
+    example = guide.rsplit("\n\n", 1)[1]  # the guide's example prompt, at its end
+    assert example.startswith("Close-up shot of a white ceramic mug")
+    assert check_prompt({"prompt": example}, runs) == (None, ["the \"prompt\" copies the guide's example: describe this scene's own shot"])
+    assert check_prompt({"prompt": "LTX-2.5"}, runs)[1] == ['the "prompt" is too short to describe the shot: write the whole shot by the guide (at least 12 words)']
+    # Sharing a few of the guide's words is fine: "the camera stays still" is the point.
+    own = "Close-up shot of frost spreading over an airplane window. The camera stays still until the glass is white. Sound: wind."
+    assert check_prompt({"prompt": own}, runs) == (own, [])

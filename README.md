@@ -537,9 +537,11 @@ model's answer as it streams in ("Writing scene 4 of 9…").
 
 - **Structured answers.** The model answers in JSON that follows a schema (servers that can't enforce
   a schema get plain JSON mode). Every answer is checked: each scene present once, a source of AI or
-  Stock, no empty text. An answer that can't be used is sent back once with what's wrong; if the
-  second one can't be used either, nothing changes and the error shows **what the model wrote** (both
-  answers). An answer cut short because the model ran out of context says how to give it more.
+  Stock, no empty text, and no prompt too short to describe a shot (under 12 words) or copied from
+  the guide's example (small models do both). An answer that can't be used is sent back once with
+  what's wrong; if the second one can't be used either, nothing changes and the error shows **what
+  the model wrote** (both answers). An answer cut short because the model ran out of context says
+  how to give it more.
 - **Your edits are kept.** A field counts as yours when it isn't empty and isn't what the AI last wrote
   there (the app remembers that per field), and a source counts as yours when you picked another
   one. Those are never overwritten without asking: the model is told you wrote them, and when it has
@@ -568,7 +570,8 @@ composition. `LTX_GUIDE` in `.env` points at another file.
 
 ### Saved with the project
 
-Scenes, their times and texts (and what the AI last wrote in each field), each preview's seed, prompt and last job state, the chosen
+Scenes, their times and texts (and what the AI last wrote in each field), each preview's seed,
+prompt and last job state, the chosen
 preview, each final (its preview, refine seed and last job state) and the progress panel are
 saved in `project.json`; the clips themselves stay in the library and the project only
 refers to them by id. The project keeps following the jobs, so a preview or final that finished
@@ -701,7 +704,8 @@ ComfyUI file-name check, and for scenes: creating and grouping them with and wit
 dragged and typed times, split, merge, add and delete, undo and redo of every scene change,
 saving and opening older projects, placing stock footage, and generating, following, choosing,
 retrying and deleting previews, and Write scenes with AI: which fields count as yours, applying the
-answer with your choices, edits made while it writes, merges and splits, and Rewrite prompt). `npm run test:e2e` drives the real frontend in Chromium against a
+answer with your choices, edits made while it writes, merges and splits, and Rewrite prompt). `npm
+run test:e2e` drives the real frontend in Chromium against a
 fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
 splitting, the crop control, Pexels and Pixabay results, the source switch, the rate-limit
 countdown, imports with the AI flag, and Generate shot (the dialog, the jobs list across a
