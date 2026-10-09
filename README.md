@@ -541,7 +541,9 @@ model's answer as it streams in ("Writing scene 4 of 9…").
   the guide's example (small models do both). An answer that can't be used is sent back once with
   what's wrong; if the second one can't be used either, nothing changes and the error shows **what
   the model wrote** (both answers). An answer cut short because the model ran out of context says
-  how to give it more.
+  how to give it more. An answer that runs on (small models sometimes write empty space or the same
+  words until the context is full, which can take many minutes) is stopped early and counts as
+  unusable; LM Studio and Ollama stop generating when the app stops reading.
 - **Your edits are kept.** A field counts as yours when it isn't empty and isn't what the AI last wrote
   there (the app remembers that per field), and a source counts as yours when you picked another
   one. Those are never overwritten without asking: the model is told you wrote them, and when it has
@@ -687,7 +689,7 @@ and picking up jobs again after a restart, plus scene previews: their seeds, sav
 their project and scene, Retry rerunning only the failed one, and Clear finished leaving them.
 Write scenes with AI is tested against a fake language model server (answering as LM Studio, Ollama or
 a plain OpenAI-compatible server) and the fake ComfyUI: a valid answer, an invalid answer then a valid
-one, two invalid answers (the raw output comes back), a server error, edited fields kept, merges and
+one, two invalid answers (the raw output comes back), answers that run on, a server error, edited fields kept, merges and
 splits held to the 2 to 5 second rule and cut on word times, long videos sent a few scenes at a time,
 plain JSON mode for servers without schemas, nothing running while ComfyUI has jobs and ComfyUI
 waiting while the model writes, ComfyUI freed first and the model unloaded after, Rewrite prompt, and

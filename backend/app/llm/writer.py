@@ -39,6 +39,10 @@ LIMITS = {"description": 2000, "searchText": 100, "prompt": 4000}
 MIN_PROMPT_WORDS = 12
 # A prompt sharing this many words in a row with the guide copied its example (small models do).
 COPIED_WORDS = 8
+# The most an answer can need, per scene (a scene and a split part at their usual length, twice
+# over) and for one prompt: beyond that it's running on and is stopped.
+MAX_CHARS_PER_SCENE = 3000
+MAX_PROMPT_CHARS = 6000
 EPS = 1e-6
 
 Progress = Callable[[float, str], None]
@@ -334,12 +338,13 @@ def ask(
     what: str,
     on_text: Callable[[str, int], None] | None = None,
     retry_numbers: list[int] | None = None,
+    max_chars: int | None = None,
 ) -> Asked:
     """Asks, checks the answer, and asks once more with what was wrong if it can't be used. Raises
     with both raw answers (errorData "raw") when the second can't be used either."""
     raw: list[str] = []
     for attempt in (1, 2):
-        reply: Reply = client.chat(messages, schema, on_text)
+        reply: Reply = client.chat(messages, schema, on_text, max_chars=max_chars)
         raw.append(reply.text)
         try:
             value, errors = check(parse_json(reply.text))
@@ -347,11 +352,15 @@ def ask(
             value, errors = None, [str(exc)]
         if reply.finish_reason == "length" and errors:
             errors.append("the answer stopped before it was finished")
+        if reply.finish_reason == "runaway":
+            errors.append("the answer ran on (empty space or the same text again) instead of ending, so it was stopped")
         if not errors:
             return Asked(value, attempt)
         if attempt == 1:
             messages = [*messages, {"role": "assistant", "content": reply.text}, retry_message(errors, retry_numbers)]
     message = f"The language model's answer for {what} couldn't be used, even after asking again: {'; '.join(errors[:4])}."
+    if reply.finish_reason == "runaway":
+        message += " Small models sometimes do this when writing JSON: try again, or use a larger model."
     if reply.finish_reason == "length":
         message += (
             " It ran out of room before finishing: give the model a longer context (LM Studio: Context Length when loading "
@@ -506,6 +515,7 @@ def write_scenes(client: LlmClient, guide: str, script: str, scenes: list[dict[s
             f"scenes {numbers[0]} to {numbers[-1]}",
             on_text,
             numbers,
+            max_chars=MAX_CHARS_PER_SCENE * len(numbers) + 500,
         )
         entries.update(asked.value)
         attempts += asked.attempts
@@ -541,5 +551,13 @@ def rewrite_prompt(client: LlmClient, guide: str, script: str, scene: dict[str, 
 
     progress(0.1, f"Reading scene {scene['number']}…")
     guide_runs = word_runs(guide)
-    asked = ask(client, messages, PROMPT_SCHEMA, lambda data: check_prompt(data, guide_runs), f"scene {scene['number']}'s prompt", on_text)
+    asked = ask(
+        client,
+        messages,
+        PROMPT_SCHEMA,
+        lambda data: check_prompt(data, guide_runs),
+        f"scene {scene['number']}'s prompt",
+        on_text,
+        max_chars=MAX_PROMPT_CHARS,
+    )
     return {"prompt": asked.value, "attempts": asked.attempts}

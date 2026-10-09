@@ -38,6 +38,10 @@ UNLOAD_TIMEOUT = httpx.Timeout(30.0, connect=3.0)
 
 # The ways to ask for JSON, best first. A server that refuses one (HTTP 400) gets the next.
 FORMATS = ("json_schema", "json_object", "none")
+# Small models writing JSON sometimes run on (empty space, or the same words again) until the
+# context is full, which can take many minutes. An answer is stopped after this much empty space in
+# a row, or once it's longer than the caller's `max_chars`; it then reads as finish_reason "runaway".
+RUNAWAY_SPACE = 300
 
 
 def server_root(url: str) -> str:
@@ -210,10 +214,12 @@ class LlmClient:
         schema: dict[str, Any],
         on_text: Callable[[str, int], None] | None = None,
         temperature: float = 0.5,
+        max_chars: int | None = None,
     ) -> Reply:
         """Sends the conversation and returns the answer, streamed: `on_text(text so far, characters
         of reasoning so far)` is called as it arrives. JSON is asked for with `schema`; a server that
-        refuses that request (HTTP 400) is asked for plain JSON mode, then with no format at all."""
+        refuses that request (HTTP 400) is asked for plain JSON mode, then with no format at all. An
+        answer that runs on (see RUNAWAY_SPACE) is cut off there."""
         if not self.model:
             raise AppError("Set LLM_MODEL in .env to the language model to use, then restart the app.", 400)
         index = self._format_index
@@ -225,7 +231,7 @@ class LlmClient:
             elif fmt == "json_object":
                 body["response_format"] = {"type": "json_object"}
             try:
-                reply = self._stream(body, fmt, on_text)
+                reply = self._stream(body, fmt, on_text, max_chars)
             except _Refused as refused:
                 if refused.status in (400, 422) and index < len(FORMATS) - 1:
                     log.info("%s refused response_format %s (%s); trying %s", self.url, fmt, refused.message, FORMATS[index + 1])
@@ -236,7 +242,7 @@ class LlmClient:
             self._format_index = index
             return reply
 
-    def _stream(self, body: dict[str, Any], fmt: str, on_text: Callable[[str, int], None] | None) -> Reply:
+    def _stream(self, body: dict[str, Any], fmt: str, on_text: Callable[[str, int], None] | None, max_chars: int | None) -> Reply:
         text: list[str] = []
         reasoning = 0
         finish: str | None = None
@@ -276,8 +282,14 @@ class LlmClient:
                         # Thinking models send their reasoning apart (LM Studio, Ollama).
                         reasoning += len(delta.get("reasoning_content") or delta.get("reasoning") or "")
                         finish = choice.get("finish_reason") or finish
+                    so_far = "".join(text)
                     if on_text:
-                        on_text("".join(text), reasoning)
+                        on_text(so_far, reasoning)
+                    tail = so_far[-RUNAWAY_SPACE:]
+                    if (len(tail) == RUNAWAY_SPACE and not tail.strip()) or (max_chars and len(so_far) > max_chars):
+                        # Leaving stops the server generating (LM Studio and Ollama stop when the client goes).
+                        log.warning("%s: the answer ran on (%d characters); stopped reading it", self.model, len(so_far))
+                        return Reply(so_far, "runaway", fmt)
         except httpx.TimeoutException as exc:
             raise LlmUnreachable(self.url, "no answer in time") from exc
         except httpx.HTTPError as exc:

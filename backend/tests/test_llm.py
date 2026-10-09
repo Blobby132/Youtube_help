@@ -530,3 +530,22 @@ def test_a_prompt_too_short_or_copied_from_the_guide_is_sent_back() -> None:
     # Sharing a few of the guide's words is fine: "the camera stays still" is the point.
     own = "Close-up shot of frost spreading over an airplane window. The camera stays still until the glass is white. Sound: wind."
     assert check_prompt({"prompt": own}, runs) == (own, [])
+
+
+def test_an_answer_that_runs_on_is_stopped_and_asked_again(api: TestClient, llm: FakeLlm) -> None:
+    # Empty space without end (what small models do in JSON mode), then a valid answer.
+    llm.replies = ['{"scenes": [' + " " * 20_000, VALID]
+    job = write(api)
+    assert job["status"] == "done", job
+    assert job["result"]["attempts"] == 2
+    retry = messages(llm.requests[1])
+    assert len(retry[2]["content"]) < 1000  # stopped soon after the empty space began
+    assert "the answer ran on (empty space or the same text again) instead of ending, so it was stopped" in retry[3]["content"]
+
+    # The same words over and over: stopped once it's longer than three scenes could need.
+    endless = '{"scenes": [{"scene": 1, "description": "' + "and the window again " * 2000
+    llm.replies = [endless, endless]
+    job = write(api)
+    assert job["status"] == "error"
+    assert "Small models sometimes do this when writing JSON: try again, or use a larger model." in job["error"]
+    assert all(9500 < len(raw) < 11_000 for raw in job["errorData"]["raw"])
