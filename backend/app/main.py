@@ -19,6 +19,7 @@ from app.core.errors import install_error_handlers
 from app.core.logging import setup_logging
 from app.fonts import router as fonts
 from app.library import router as library
+from app.llm import router as llm
 from app.mix import router as mix
 from app.pexels import router as pexels
 from app.pixabay import router as pixabay
@@ -63,6 +64,7 @@ def create_app(*, warm: bool = True) -> FastAPI:
             log.info("No PIXABAY_API_KEY or PEXELS_API_KEY in .env; stock search stays off until you add one")
         log.info("Finished videos go to: %s", settings.exports_dir)
         log.info("ComfyUI (Generate shot): %s, workflow %s", settings.comfyui_url, settings.comfy_workflow.name)
+        log.info("Language model (Write scenes with AI): %s, model %s", settings.llm_url, settings.llm_model or "not set (LLM_MODEL in .env)")
         if warm:
             threading.Thread(target=warm_up, args=(settings,), name="warm-up", daemon=True).start()
             # Shots still generating when the backend stopped: keep following them.
@@ -92,6 +94,7 @@ def create_app(*, warm: bool = True) -> FastAPI:
     app.include_router(pexels.router)
     app.include_router(pixabay.router)
     app.include_router(comfy.router)
+    app.include_router(llm.router)
     app.include_router(autofill.router)
     app.include_router(render.router)
     return app

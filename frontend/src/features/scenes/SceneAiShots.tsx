@@ -1,4 +1,4 @@
-import { Check, Film, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
+import { Check, Film, LoaderCircle, PenLine, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Button } from '../../components/ui/Button'
 import { ProgressBar } from '../../components/ui/ProgressBar'
@@ -15,6 +15,8 @@ import { SceneFinalBlock } from './SceneFinal'
 import { isOldPreview } from './sceneFinals'
 import { cancelPreview, deletePreview, isPreviewActive, PREVIEW_STATUS_LABEL, previewStatusLine, retryPreview } from './scenePreviews'
 import { generateScenePreviews } from './sceneRun'
+import { RawOutput } from './AiWriteSection'
+import { comfyJobsActive, llmBlocker, rewriteScenePrompt, useLlm } from './llmStore'
 import styles from './Scenes.module.css'
 
 const COUNTS = Array.from({ length: MAX_PREVIEWS - MIN_PREVIEWS + 1 }, (_, i) => {
@@ -43,6 +45,12 @@ export function SceneAiShots({ scene, number }: { scene: Scene; number: number }
   const prompt = scene.prompt.trim()
   const chosen = previews.some((p) => p.id === scene.selectedPreviewId) ? scene.selectedPreviewId : null
   const active = previews.filter((p) => isPreviewActive(jobs.get(p.jobId) ?? p))
+  const llmStatus = useLlm((s) => s.status)
+  const llmRun = useLlm((s) => s.run)
+  const promptFailure = useLlm((s) => s.promptFailures[scene.id])
+  const comfyJobs = useGenerate((s) => comfyJobsActive(s.jobs))
+  const llmBlocked = llmBlocker(llmStatus, online, comfyJobs)
+  const rewriting = llmRun?.kind === 'prompt' && llmRun.sceneId === scene.id
 
   async function generate() {
     setBusy(true)
@@ -58,8 +66,20 @@ export function SceneAiShots({ scene, number }: { scene: Scene; number: number }
 
   return (
     <>
-      <label className={styles.field}>
-        <span className={styles.label}>ComfyUI prompt</span>
+      <div className={styles.field}>
+        <div className={styles.fieldHead}>
+          <span className={styles.label}>ComfyUI prompt</span>
+          <button
+            type="button"
+            className={styles.small}
+            disabled={llmBlocked !== null || llmRun !== null}
+            title={llmBlocked ?? (llmRun ? 'The language model is busy' : 'Have the language model write this prompt again, by prompts/ltx_guide.md')}
+            aria-label={`Rewrite the prompt of scene ${number}`}
+            onClick={() => void rewriteScenePrompt(scene.id)}
+          >
+            {rewriting ? <LoaderCircle size={11} className={styles.spin} aria-hidden /> : <PenLine size={11} aria-hidden />} Rewrite prompt
+          </button>
+        </div>
         <textarea
           className={styles.text}
           rows={3}
@@ -69,7 +89,20 @@ export function SceneAiShots({ scene, number }: { scene: Scene; number: number }
           aria-label={`ComfyUI prompt of scene ${number}`}
           onChange={(event) => updateScene(scene.id, { prompt: event.target.value }, 'prompt')}
         />
-      </label>
+        {rewriting && (
+          <span className={styles.note} data-testid="prompt-progress">
+            {llmRun.message}
+          </span>
+        )}
+        {promptFailure && (
+          <div className={styles.message} role="alert">
+            <div>
+              {promptFailure.message}
+              <RawOutput failure={promptFailure} />
+            </div>
+          </div>
+        )}
+      </div>
       <div className={styles.row}>
         <span className={styles.label}>Previews</span>
         <Segmented label={`Previews of scene ${number}`} options={COUNTS} value={scene.previewCount} onChange={(count) => setPreviewCount(scene.id, count)} />

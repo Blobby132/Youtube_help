@@ -5,7 +5,18 @@
 // loading uses this file.)
 import { newId } from '../../lib/ids'
 import { formatTimecode } from '../../lib/time'
-import type { GenerationRun, PreviewStatus, RunStep, Scene, SceneFinal, ScenePreview, SceneSource, TimeRange } from '../../state/project/types'
+import type {
+  GenerationRun,
+  PreviewStatus,
+  RunStep,
+  Scene,
+  SceneFinal,
+  ScenePreview,
+  SceneSource,
+  SceneTextField,
+  SceneTexts,
+  TimeRange,
+} from '../../state/project/types'
 
 /** Shortest scene you can make by hand, in seconds. Create scenes makes them 2 to 5 s long. */
 export const MIN_SCENE = 0.5
@@ -41,8 +52,25 @@ export function newScene(id: string, start: number, end: number): Scene {
     previewCount: DEFAULT_PREVIEWS,
     selectedPreviewId: null,
     stockItemId: null,
+    aiWritten: {},
   }
 }
+
+export const SCENE_TEXT_FIELDS: readonly SceneTextField[] = ['source', 'description', 'searchText', 'prompt']
+
+/**
+ * Whether you've edited a field since the AI last wrote it: a text field that isn't empty and
+ * isn't what the AI wrote, or a source other than the AI's (or than AI, the default, before it
+ * wrote one). Write scenes with AI asks before replacing such a field.
+ */
+export function isEdited(scene: Scene, field: SceneTextField): boolean {
+  const written = scene.aiWritten[field]
+  if (field === 'source') return scene.source !== (written ?? 'ai')
+  const value = scene[field]
+  return value.trim() !== '' && value !== (written ?? '')
+}
+
+export const editedFields = (scene: Scene) => SCENE_TEXT_FIELDS.filter((field) => isEdited(scene, field))
 
 /** The length of a scene's previews: its own, rounded up to whole seconds, 2 to 5. */
 export function previewSeconds(scene: TimeRange): number {
@@ -165,14 +193,14 @@ export function mergeWithNext(scenes: readonly Scene[], id: string): Scene[] | n
   const index = sorted.findIndex((s) => s.id === id)
   const [first, second] = [sorted[index], sorted[index + 1]]
   if (!first || !second) return null
-  const merged: Scene = {
-    ...first,
-    end: second.end,
-    description: first.description.trim() ? first.description : second.description,
-    prompt: first.prompt.trim() ? first.prompt : second.prompt,
-    searchText: first.searchText.trim() ? first.searchText : second.searchText,
-    stockItemId: first.stockItemId ?? second.stockItemId,
+  const merged: Scene = { ...first, end: second.end, stockItemId: first.stockItemId ?? second.stockItemId, aiWritten: {} }
+  for (const field of ['description', 'prompt', 'searchText'] as const) {
+    // The text, and whether the AI wrote it, come from the same scene.
+    const from = first[field].trim() ? first : second
+    merged[field] = from[field]
+    if (from.aiWritten[field] !== undefined) merged.aiWritten[field] = from.aiWritten[field]
   }
+  if (first.aiWritten.source !== undefined) merged.aiWritten.source = first.aiWritten.source
   return sorted.filter((s) => s !== second).map((s) => (s === first ? merged : s))
 }
 
@@ -260,10 +288,20 @@ export function normalizeScenes(raw: unknown): Scene[] {
       previewCount: Math.min(MAX_PREVIEWS, Math.max(MIN_PREVIEWS, count || DEFAULT_PREVIEWS)),
       selectedPreviewId: idOrNull(s.selectedPreviewId),
       stockItemId: idOrNull(s.stockItemId),
+      aiWritten: normalizeAiWritten(s.aiWritten),
     })
     lastEnd = end
   }
   return scenes
+}
+
+/** What the AI wrote into a saved scene's fields (projects before part C have none). */
+function normalizeAiWritten(raw: unknown): Partial<SceneTexts> {
+  if (!isObject(raw)) return {}
+  const written: Partial<SceneTexts> = {}
+  if (SOURCES.includes(raw.source as SceneSource)) written.source = raw.source as SceneSource
+  for (const field of ['description', 'prompt', 'searchText'] as const) if (typeof raw[field] === 'string') written[field] = raw[field]
+  return written
 }
 
 /** Previews from a saved project; ones missing their scene, job or seed are dropped. */

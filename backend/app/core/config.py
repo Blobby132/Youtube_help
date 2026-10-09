@@ -44,6 +44,11 @@ class Settings:
     comfy_workflow: Path = REPO_ROOT / "comfy" / "ltx_t2v_api.json"
     # Finished videos: exports/<project name>/<project name>.mp4
     exports_dir: Path = REPO_ROOT / "exports"
+    # A language model on this PC ("Write scenes with AI"): an OpenAI-compatible server such as
+    # LM Studio or Ollama, the model to use, and the prompt-writing guide sent to it.
+    llm_url: str = "http://127.0.0.1:1234/v1"
+    llm_model: str | None = None
+    ltx_guide: Path = REPO_ROOT / "prompts" / "ltx_guide.md"
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -70,4 +75,7 @@ def get_settings() -> Settings:
         comfyui_url=(os.getenv("COMFYUI_URL") or "").strip() or "http://127.0.0.1:8188",
         comfy_workflow=_path_from_env("COMFYUI_WORKFLOW", REPO_ROOT / "comfy" / "ltx_t2v_api.json"),
         exports_dir=_path_from_env("EXPORTS_DIR", REPO_ROOT / "exports"),
+        llm_url=(os.getenv("LLM_URL") or "").strip() or "http://127.0.0.1:1234/v1",
+        llm_model=(os.getenv("LLM_MODEL") or "").strip() or None,
+        ltx_guide=_path_from_env("LTX_GUIDE", REPO_ROOT / "prompts" / "ltx_guide.md"),
     )

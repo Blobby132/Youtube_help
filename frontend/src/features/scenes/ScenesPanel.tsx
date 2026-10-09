@@ -9,6 +9,7 @@ import { useProject } from '../../state/project/store'
 import { useUi } from '../../state/ui'
 import { checkComfy, useGenerate } from '../generate/generateStore'
 import { WORDS_PER_MINUTE } from '../media/autofillPlan'
+import { AiWriteSection } from './AiWriteSection'
 import { GenerationPanel } from './GenerationPanel'
 import { PreviewRow } from './SceneAiShots'
 import { SceneCard } from './SceneCard'
@@ -66,6 +67,8 @@ export function ScenesPanel() {
         {message && <InlineAlert tone="info">{message}</InlineAlert>}
         {generateError && hasAi && <InlineAlert>{generateError}</InlineAlert>}
       </Section>
+
+      <AiWriteSection />
 
       {hasAi && <GenerationPanel />}
 

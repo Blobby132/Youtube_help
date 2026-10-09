@@ -1,4 +1,5 @@
-"""Background jobs for slow work (AI voiceover, captions, downloads, imports and renders).
+"""Background jobs for slow work (AI voiceover, captions, downloads, imports, renders, and the
+language model writing scenes).
 
 The frontend starts a job, then polls GET /api/jobs/{id} for progress. Heavy jobs (the AI
 models) run one at a time so two models never compete for memory. Media jobs (downloads,
@@ -34,6 +35,8 @@ class Job:
     message: str = "Waiting…"
     result: Any = None
     error: str | None = None
+    # Data that comes with a failure, e.g. {"raw": [...]}: what the language model actually wrote.
+    error_data: dict[str, Any] | None = None
     created: float = field(default_factory=time.time)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -54,11 +57,13 @@ class Job:
                 "message": self.message,
                 "result": self.result,
                 "error": self.error,
+                "errorData": self.error_data,
             }
 
 
-# Renders get their own worker: one at a time, and never stuck behind an AI job.
-POOLS = {"heavy": 1, "media": 2, "render": 1}
+# Renders get their own worker: one at a time, and never stuck behind an AI job. The language model
+# runs in its own server, one request at a time, so captions don't wait behind it.
+POOLS = {"heavy": 1, "media": 2, "render": 1, "llm": 1}
 
 
 class JobManager:
@@ -89,7 +94,7 @@ class JobManager:
             result = work(job)
         except AppError as exc:
             log.warning("Job %s (%s) failed: %s", job.id, job.kind, exc.message)
-            job.error, job.status = exc.message, "error"
+            job.error, job.error_data, job.status = exc.message, exc.extra or None, "error"
         except Exception as exc:
             log.exception("Job %s (%s) crashed", job.id, job.kind)
             job.error, job.status = f"{type(exc).__name__}: {exc}", "error"

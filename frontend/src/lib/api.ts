@@ -1,6 +1,6 @@
 // Thin fetch wrapper for the FastAPI backend. Errors carry the backend's
 // `detail` message so the UI can show the real reason.
-import type { CaptionWord, MusicTrack, Project, ProjectSummary, Voiceover } from '../state/project/types'
+import type { CaptionWord, MusicTrack, Project, ProjectSummary, SceneTextField, SceneTexts, Voiceover } from '../state/project/types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -90,6 +90,8 @@ export interface Job<T = unknown> {
   message: string
   result: T | null
   error: string | null
+  /** Data that comes with a failure, e.g. { raw: [...] }: what the language model wrote. */
+  errorData?: Record<string, unknown> | null
 }
 
 export type MediaSource = 'pexels' | 'pixabay' | 'upload' | 'ai'
@@ -177,6 +179,110 @@ export interface ComfyStatus {
   workflowProblem: string | null
   /** Why finals couldn't match their previews with this workflow (null when they can). */
   finalsProblem?: string | null
+  /** Set while the language model uses the GPU: new shots wait, and this says why. */
+  llmBusy?: string | null
+}
+
+/** The language model server (LM Studio, Ollama, …) and what ComfyUI is doing on the shared GPU. */
+export interface LlmStatus {
+  reachable: boolean
+  /** Its OpenAI-compatible address (LLM_URL). */
+  url: string
+  /** LLM_MODEL, or null when it isn't set. */
+  model: string | null
+  /** Why it can't be reached, ready to show. */
+  error: string | null
+  server?: 'lmstudio' | 'ollama' | 'openai'
+  serverName?: string
+  models?: string[]
+  /** Why it can't run (no LLM_MODEL). */
+  modelProblem?: string | null
+  /** Worth knowing, but it can still try (the server doesn't list LLM_MODEL). */
+  modelWarning?: string | null
+  /** Whether the server can be asked to unload the model after a run. */
+  canUnload?: boolean
+  comfy: { reachable: boolean; running: number; pending: number; busy: string | null }
+  /** A language model run is waiting or going (from any window). */
+  running: boolean
+  guide: string
+  guideProblem: string | null
+}
+
+/** One scene as Write scenes with AI sends it: its time, words (with times), fields and edits. */
+export interface WriteScene extends SceneTexts {
+  id: string
+  start: number
+  end: number
+  words: { text: string; start: number; end: number }[]
+  /** The fields you've edited: the AI's text for them comes back to ask about. */
+  edited: SceneTextField[]
+}
+
+/** The fields as the AI writes them (its source is AI or stock). */
+export type AiTexts = Omit<SceneTexts, 'source'> & { source: 'ai' | 'stock' }
+
+export interface AiSceneResult {
+  id: string
+  /** Fields to fill in: ones you haven't edited. */
+  set: Partial<AiTexts>
+  /** The AI's text for fields you've edited (when it differs): asked about, never just used. */
+  ask: Partial<AiTexts>
+}
+
+/** A merge the AI suggests that keeps the scene 2 to 5 seconds long. */
+export interface AiMerge {
+  id: string
+  next: string
+  start: number
+  end: number
+  why: string
+  /** Fields you wrote in the next scene that the merged scene would replace. */
+  replacesEdits: SceneTextField[]
+}
+
+/** A split the AI suggests, at the start of a word, leaving two scenes of 2 to 5 seconds. */
+export interface AiSplit {
+  id: string
+  at: number
+  /** The words the second part begins with. */
+  before: string
+  second: AiTexts
+  why: string
+}
+
+export interface WriteResult {
+  scenes: AiSceneResult[]
+  merges: AiMerge[]
+  splits: AiSplit[]
+  /** Merges and splits left out, and why (they'd break the 2 to 5 second rule, …). */
+  skipped: string[]
+  model: string
+  /** Answers it took (an invalid one is sent back once). */
+  attempts: number
+  requests: number
+  /** What happened on the GPU: ComfyUI freed, the model unloaded. */
+  notes: string[]
+}
+
+export interface PromptRequest {
+  script: string
+  scene: {
+    number: number
+    start: number
+    end: number
+    narration: string
+    description: string
+    prompt: string
+    before: string | null
+    after: string | null
+  }
+}
+
+export interface PromptResult {
+  prompt: string
+  model: string
+  attempts: number
+  notes: string[]
 }
 
 export type ShotStatus = 'queued' | 'running' | 'saving' | 'done' | 'error' | 'cancelled'
@@ -387,6 +493,9 @@ export const api = {
     request<{ deleted: string }>(`/api/comfy/shots/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
   clearShots: () => request<{ jobs: ShotJob[] }>('/api/comfy/shots/clear', json('POST', {})),
   generateFinal: (final: FinalRequest) => request<{ job: ShotJob }>('/api/comfy/finals', json('POST', final)),
+  llmStatus: () => request<LlmStatus>('/api/llm/status'),
+  writeScenes: (body: { script: string; scenes: WriteScene[] }) => request<Job<WriteResult>>('/api/llm/scenes', json('POST', body)),
+  rewritePrompt: (body: PromptRequest) => request<Job<PromptResult>>('/api/llm/prompt', json('POST', body)),
   renderCheck: (project: Project) => request<RenderCheck>('/api/render/check', json('POST', { project })),
   startRender: (
     body: { project: Project; quality: RenderQuality['id']; fps: { num: number; den: number }; frames: number },

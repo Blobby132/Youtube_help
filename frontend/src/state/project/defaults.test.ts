@@ -92,8 +92,22 @@ describe('normalizeProject', () => {
         previewCount: 3,
         selectedPreviewId: 'v2',
         stockItemId: null,
+        // What Write scenes with AI wrote (the prompt has been edited since).
+        aiWritten: { source: 'ai', description: 'A fox in the snow', prompt: 'A fox in snow' },
       },
-      { id: 's2', start: 3.2, end: 6, source: 'stock', description: '', prompt: '', searchText: 'snowy forest', previewCount: 2, selectedPreviewId: null, stockItemId: 'm-pixabay1' },
+      {
+        id: 's2',
+        start: 3.2,
+        end: 6,
+        source: 'stock',
+        description: '',
+        prompt: '',
+        searchText: 'snowy forest',
+        previewCount: 2,
+        selectedPreviewId: null,
+        stockItemId: 'm-pixabay1',
+        aiWritten: {},
+      },
     ]
     saved.scenePreviews = [
       { id: 'v1', sceneId: 's1', jobId: 'g-1', seed: 123456, prompt: 'A red fox', duration: 4, status: 'error', error: 'CUDA out of memory', itemId: null, createdAt: '2026-10-08T00:00:00Z' },
@@ -103,6 +117,10 @@ describe('normalizeProject', () => {
     const reopened = normalizeProject(JSON.parse(JSON.stringify(saved)))
     expect(reopened.scenes).toEqual(saved.scenes)
     expect(reopened.scenePreviews).toEqual(saved.scenePreviews)
+    // Scenes saved before Write scenes with AI have nothing written by it.
+    const older = JSON.parse(JSON.stringify(saved))
+    delete older.scenes[0].aiWritten
+    expect(normalizeProject(older).scenes[0].aiWritten).toEqual({})
     // Media stays in the library: the project only refers to it by id.
     expect(JSON.stringify(reopened)).not.toMatch(/\.mp4|\.webm|data:/)
   })

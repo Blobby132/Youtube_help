@@ -158,6 +158,62 @@ export function aiShotItem(id: string, prompt: string, quality: 'draft' | 'final
   })
 }
 
+/** One scene as Write scenes with AI sends it. */
+export interface FakeWriteScene {
+  id: string
+  start: number
+  end: number
+  words: { text: string; start: number; end: number }[]
+  source: string
+  description: string
+  prompt: string
+  searchText: string
+  edited: string[]
+}
+
+type Texts = { source: 'ai' | 'stock'; description: string; searchText: string; prompt: string }
+
+/** What the fake language model writes for scene `number` (1-based). */
+export const aiTexts = (number: number): Texts => ({
+  source: number === 1 ? 'stock' : 'ai',
+  description: `AI description ${number}`,
+  searchText: `ai search ${number}`,
+  prompt: `Close-up shot ${number}, the camera stays still. Sound: a soft hum.`,
+})
+
+/** The backend's answer for scenes: the AI's text goes into fields you haven't edited and is offered for the rest. */
+export function writeResult(scenes: FakeWriteScene[], extra: Record<string, unknown> = {}) {
+  return {
+    scenes: scenes.map((scene, i) => {
+      const texts = aiTexts(i + 1)
+      const set: Partial<Texts> = {}
+      const ask: Partial<Texts> = {}
+      for (const [field, value] of Object.entries(texts) as [keyof Texts, string][]) {
+        if (!scene.edited.includes(field)) Object.assign(set, { [field]: value })
+        else if (scene[field] !== value) Object.assign(ask, { [field]: value })
+      }
+      return { id: scene.id, set, ask }
+    }),
+    merges: [],
+    splits: [],
+    skipped: [],
+    model: 'qwen/qwen3-8b',
+    attempts: 1,
+    requests: 1,
+    notes: ['Asked ComfyUI to unload its models first.', 'Unloaded qwen/qwen3-8b from LM Studio.'],
+    ...extra,
+  }
+}
+
+/** A run that failed: its message and the model's raw answers. */
+export interface FakeLlmFailure {
+  error: string
+  raw?: string[]
+}
+
+export const LLM_BUSY =
+  "The language model is writing 3 scenes, so ComfyUI waits until it's done. The language model and ComfyUI share the GPU, and running both at once can run out of video memory or slow both to a crawl."
+
 interface FakeOptions {
   library?: FakeLibraryItem[]
   /** For each source, null (or left out): no API key; otherwise the videos searches find. */
@@ -205,11 +261,12 @@ function serveFile(route: Route, body: Buffer, contentType: string) {
 interface Job {
   id: string
   kind: string
-  status: 'done'
+  status: 'running' | 'done' | 'error'
   progress: number
   message: string
   result: unknown
-  error: null
+  error: string | null
+  errorData?: Record<string, unknown> | null
 }
 
 export async function fakeBackend(page: Page, options: FakeOptions = {}) {
@@ -225,6 +282,29 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
   const shotRequests: Record<string, unknown>[] = []
   const finalRequests: Record<string, unknown>[] = []
   let seedCounter = 1000
+  /** The fake language model: whether it answers, ComfyUI's queue as it reports it, and its answers. */
+  const llm = {
+    reachable: true,
+    /** Set: ComfyUI is generating (as the backend reads ComfyUI's queue), so runs are refused. */
+    comfyBusy: null as string | null,
+    /** On: a run stays "running" until release() (to look at the app meanwhile). */
+    hold: false,
+    scenes: (body: { scenes: FakeWriteScene[] }): unknown => writeResult(body.scenes),
+    prompt: (body: { scene: { number: number } }): unknown => ({ prompt: `Rewritten prompt for scene ${body.scene.number}. Sound: wind.` }),
+    requests: { scenes: [] as { script: string; scenes: FakeWriteScene[] }[], prompt: [] as { script: string; scene: Record<string, unknown> }[] },
+    running: null as { job: Job; outcome: unknown } | null,
+    release() {
+      const run = llm.running
+      if (!run) return
+      llm.running = null
+      settle(run.job, run.outcome)
+    },
+  }
+  const settle = (job: Job, outcome: unknown) => {
+    const failure = outcome as FakeLlmFailure
+    if (failure && typeof failure.error === 'string') Object.assign(job, { status: 'error', error: failure.error, errorData: { raw: failure.raw ?? [] }, message: '' })
+    else Object.assign(job, { status: 'done', progress: 1, message: 'Done', result: outcome })
+  }
   let pronunciations: unknown[] = []
   let counter = 0
 
@@ -274,6 +354,38 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
       return json(route, { entries: pronunciations })
     }
     if (parts[0] === 'jobs') return json(route, jobs.get(parts[1]))
+    if (parts[0] === 'llm') {
+      if (parts[1] === 'status') {
+        return json(route, {
+          reachable: llm.reachable,
+          url: 'http://127.0.0.1:1234/v1',
+          model: 'qwen/qwen3-8b',
+          error: llm.reachable
+            ? null
+            : "The language model server isn't answering at http://127.0.0.1:1234/v1 (ConnectError). Start the server in LM Studio (Developer → Start server) or start Ollama, then check again.",
+          ...(llm.reachable && { server: 'lmstudio', serverName: 'LM Studio', models: ['qwen/qwen3-8b'], modelProblem: null, modelWarning: null, canUnload: true }),
+          comfy: { reachable: comfy.reachable, running: llm.comfyBusy ? 1 : 0, pending: 0, busy: llm.comfyBusy },
+          running: llm.running !== null,
+          guide: 'ltx_guide.md',
+          guideProblem: null,
+        })
+      }
+      if (llm.comfyBusy) return json(route, { detail: llm.comfyBusy }, 409)
+      const body = request.postDataJSON()
+      let outcome: unknown
+      if (parts[1] === 'scenes') {
+        llm.requests.scenes.push(body)
+        outcome = llm.scenes(body)
+      } else {
+        llm.requests.prompt.push(body)
+        outcome = llm.prompt(body)
+      }
+      const job: Job = { id: `job-${++counter}`, kind: `llm-${parts[1]}`, status: 'running', progress: 0.5, message: 'Writing scene 2 of 3…', result: null, error: null }
+      jobs.set(job.id, job)
+      if (llm.hold) llm.running = { job, outcome }
+      else settle(job, outcome)
+      return json(route, job)
+    }
     if (parts[0] === 'comfy') {
       if (parts[1] === 'status') {
         return json(route, {
@@ -285,6 +397,7 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
           workflow: 'ltx_t2v_api.json',
           workflowProblem: null,
           finalsProblem: null,
+          llmBusy: llm.running ? LLM_BUSY : null,
         })
       }
       if (parts[1] === 'shots' && parts.length === 2 && method === 'GET') return json(route, { jobs: [...shots].reverse() })
@@ -506,5 +619,5 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
     }
   }
 
-  return { library, projects, searched, limits, comfy, shots, shotRequests, finalRequests, runShot }
+  return { library, projects, searched, limits, comfy, shots, shotRequests, finalRequests, runShot, llm }
 }

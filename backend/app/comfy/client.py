@@ -151,6 +151,17 @@ class ComfyClient:
         entry = data.get(prompt_id) if isinstance(data, dict) else None
         return entry if isinstance(entry, dict) else None
 
+    def free_memory(self) -> bool:
+        """Asks ComfyUI to unload its models and free the GPU memory they hold (what its own "Unload
+        models" button does); it does so as soon as nothing is running. False when this ComfyUI has
+        no such API (versions before 2024)."""
+        response = self._request("POST", "/free", json={"unload_models": True, "free_memory": True})
+        if response.status_code in (404, 405):
+            return False
+        if response.status_code >= 400:
+            raise AppError(f"ComfyUI couldn't free its memory (HTTP {response.status_code}): {response.text[:300]}", 502)
+        return True
+
     def cancel(self, prompt_id: str) -> None:
         """Removes a waiting job from ComfyUI's queue, or stops it if it's running."""
         running, pending = self.queue()
