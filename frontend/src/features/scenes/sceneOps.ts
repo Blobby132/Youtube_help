@@ -5,7 +5,7 @@
 // loading uses this file.)
 import { newId } from '../../lib/ids'
 import { formatTimecode } from '../../lib/time'
-import type { PreviewStatus, Scene, ScenePreview, SceneSource, TimeRange } from '../../state/project/types'
+import type { GenerationRun, PreviewStatus, RunStep, Scene, SceneFinal, ScenePreview, SceneSource, TimeRange } from '../../state/project/types'
 
 /** Shortest scene you can make by hand, in seconds. Create scenes makes them 2 to 5 s long. */
 export const MIN_SCENE = 0.5
@@ -208,6 +208,12 @@ export const deleteScene = (scenes: readonly Scene[], id: string) => scenes.filt
 /** Previews of one scene, oldest first. */
 export const previewsOf = (previews: readonly ScenePreview[], sceneId: string) => previews.filter((p) => p.sceneId === sceneId)
 
+/** A scene's final: its newest one (Regenerate final adds another), or undefined. */
+export function finalOf(finals: readonly SceneFinal[], sceneId: string): SceneFinal | undefined {
+  for (let i = finals.length - 1; i >= 0; i--) if (finals[i].sceneId === sceneId) return finals[i]
+  return undefined
+}
+
 /** Previews whose scene is gone (deleted, merged away, or replaced by Create scenes). */
 export function orphanPreviews(previews: readonly ScenePreview[], scenes: readonly Scene[]): ScenePreview[] {
   const ids = new Set(scenes.map((s) => s.id))
@@ -280,4 +286,41 @@ export function normalizePreviews(raw: unknown): ScenePreview[] {
       },
     ]
   })
+}
+
+/** Finals from a saved project; ones missing their scene, preview or job are dropped. */
+export function normalizeFinals(raw: unknown): SceneFinal[] {
+  return (Array.isArray(raw) ? raw : []).filter(isObject).flatMap((f) => {
+    const ids = [f.id, f.sceneId, f.previewId, f.previewItemId, f.jobId]
+    if (!ids.every((id) => typeof id === 'string' && id)) return []
+    return [
+      {
+        id: f.id as string,
+        sceneId: f.sceneId as string,
+        previewId: f.previewId as string,
+        previewItemId: f.previewItemId as string,
+        jobId: f.jobId as string,
+        refineSeed: typeof f.refineSeed === 'number' ? f.refineSeed : null,
+        status: STATUSES.includes(f.status as PreviewStatus) ? (f.status as PreviewStatus) : 'error',
+        error: typeof f.error === 'string' ? f.error : null,
+        itemId: idOrNull(f.itemId),
+        createdAt: typeof f.createdAt === 'string' ? f.createdAt : '',
+      },
+    ]
+  })
+}
+
+/** Why a run step saved before it was queued has nothing (the page closed while it started). */
+export const INTERRUPTED = 'The app was closed before this was sent to ComfyUI. Retry sends it.'
+
+/** The progress panel's run from a saved project (null when there's none). */
+export function normalizeRun(raw: unknown): GenerationRun | null {
+  if (!isObject(raw) || typeof raw.id !== 'string') return null
+  const steps: RunStep[] = (Array.isArray(raw.steps) ? raw.steps : []).filter(isObject).flatMap((step) => {
+    if (typeof step.sceneId !== 'string' || (step.kind !== 'previews' && step.kind !== 'final')) return []
+    const recordIds = (Array.isArray(step.recordIds) ? step.recordIds : []).filter((id): id is string => typeof id === 'string')
+    const error = typeof step.error === 'string' ? step.error : recordIds.length ? null : INTERRUPTED
+    return [{ sceneId: step.sceneId, kind: step.kind, recordIds, error }]
+  })
+  return steps.length ? { id: raw.id, steps } : null
 }

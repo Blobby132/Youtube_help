@@ -39,6 +39,14 @@ class FakeComfy:
         self.deleted: list[str] = []
         self.interrupted: list[str] = []
         self.refusal: dict[str, Any] | None = None
+        # Files put in ComfyUI's input folder (/upload/image), by name.
+        self.uploads: dict[str, bytes] = {}
+        # Files in the output folder other than the video, by (subfolder, name): saved latents.
+        self.files: dict[tuple[str, str], bytes] = {}
+        # Set to make Preview as Text show this (as if the prompt enhancer rewrote the prompt).
+        self.enhanced_prompt: str | None = None
+        # Off: SaveLatent nodes save nothing (as if they failed quietly).
+        self.save_latents = True
         self.sockets: dict[str, list[WebSocket]] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
         self._counter = 0
@@ -50,6 +58,7 @@ class FakeComfy:
                 Route("/queue", self.queue, methods=["GET", "POST"]),
                 Route("/history/{prompt_id}", self.get_history),
                 Route("/view", self.view),
+                Route("/upload/image", self.upload, methods=["POST"]),
                 Route("/interrupt", self.interrupt, methods=["POST"]),
                 WebSocketRoute("/ws", self.ws),
             ]
@@ -111,8 +120,20 @@ class FakeComfy:
 
     async def view(self, request: Request) -> Response:
         assert request.query_params["type"] == "output"
-        assert request.query_params["subfolder"] == "video"
-        return FileResponse(self.video)
+        subfolder, filename = request.query_params["subfolder"], request.query_params["filename"]
+        if subfolder == "video":
+            return FileResponse(self.video)
+        if (subfolder, filename) in self.files:
+            return Response(self.files[(subfolder, filename)], media_type="application/octet-stream")
+        return Response(status_code=404)
+
+    async def upload(self, request: Request) -> Response:
+        form = await request.form()
+        image = form["image"]
+        assert form.get("type") == "input" and form.get("overwrite") == "true"
+        name = image.filename  # type: ignore[union-attr]
+        self.uploads[name] = await image.read()  # type: ignore[union-attr]
+        return JSONResponse({"name": name, "subfolder": "", "type": "input"})
 
     async def interrupt(self, request: Request) -> Response:
         body = await request.json() if await request.body() else {}
@@ -178,12 +199,23 @@ class FakeComfy:
             self._finish(prompt_id, [["execution_success", {"prompt_id": prompt_id}]], ok=True)
 
     def _finish(self, prompt_id: str, messages: list, ok: bool) -> None:
-        outputs = {}
+        outputs: dict[str, Any] = {}
         if ok:
             outputs[self.OUTPUT_NODE] = {
                 "images": [{"filename": "LTX_2.5_t2v_00001_.mp4", "subfolder": "video", "type": "output"}],
                 "animated": [True],
             }
+            graph = self.submitted[prompt_id]["prompt"]
+            for node_id, node in graph.items():
+                if node["class_type"] == "SaveLatent" and self.save_latents:
+                    # Like ComfyUI: <prefix>_00001_.latent in the prefix's folder, made from that pass.
+                    folder, _, base = node["inputs"]["filename_prefix"].rpartition("/")
+                    name = f"{base}_00001_.latent"
+                    self.files[(folder, name)] = f"{prompt_id}:{node['inputs']['samples']}".encode()
+                    outputs[node_id] = {"latents": [{"filename": name, "subfolder": folder, "type": "output"}]}
+                elif node["class_type"] == "PreviewAny":
+                    prompt = next(n["inputs"]["value"] for n in graph.values() if (n.get("_meta") or {}).get("title") == "Prompt")
+                    outputs[node_id] = {"text": [self.enhanced_prompt or prompt]}
         self.history[prompt_id] = {
             "prompt": [0, prompt_id, self.submitted[prompt_id]["prompt"], {}, [self.OUTPUT_NODE]],
             "outputs": outputs,

@@ -1,7 +1,7 @@
 // Generate shot: ComfyUI's status and the shots being made. The jobs live in the backend
 // (data/generations.json), so this store just mirrors them; a page reload loses nothing.
 import { create } from 'zustand'
-import { api, type ComfyStatus, type ShotJob, type ShotRequest } from '../../lib/api'
+import { api, type ComfyStatus, type FinalRequest, type ShotJob, type ShotRequest } from '../../lib/api'
 import { loadLibrary, useLibrary } from '../library/libraryStore'
 
 interface GenerateState {
@@ -80,6 +80,14 @@ export async function generateShots(shot: ShotRequest): Promise<ShotJob[]> {
   useGenerate.setState((s) => ({ jobs: [...jobs, ...s.jobs.filter((j) => !jobs.some((n) => n.id === j.id))] }))
   pollSoon()
   return jobs
+}
+
+/** Queues a scene's final; throws with the backend's reason (e.g. an old preview, ComfyUI closed). */
+export async function generateFinalJob(final: FinalRequest): Promise<ShotJob> {
+  const { job } = await api.generateFinal(final)
+  useGenerate.setState((s) => ({ jobs: [job, ...s.jobs.filter((j) => j.id !== job.id)] }))
+  pollSoon()
+  return job
 }
 
 export async function cancelShot(jobId: string) {

@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { fakeBackend, stockResult } from './fakeBackend'
+import { fakeBackend, libraryItem, stockResult } from './fakeBackend'
 
 // 24 words. The fake voiceover is 8 s long; the fake captions time word i at i × 0.3 s.
 const SCRIPT = 'Every airplane window has a tiny hole in it. It keeps the window from fogging up. The hole lets air move between the panes.'
@@ -287,4 +287,150 @@ test('Find footage explains the missing Pixabay key', async ({ page }) => {
   await scene.getByLabel('Stock search text of scene 1').fill('window')
   await expect(scene.getByRole('button', { name: 'Find footage' })).toBeDisabled()
   await expect(scene).toContainText('Find footage searches Pixabay, which needs a free API key')
+})
+
+const PROMPTS = ['Airplane window at sunrise', 'A tiny hole in a window pane', 'Air moving between glass panes']
+
+/** Fills in each scene's prompt, with one preview each. */
+async function aiScenes(page: Page) {
+  const scenes = page.getByTestId('scene')
+  for (const [i, prompt] of PROMPTS.entries()) {
+    await scenes.nth(i).getByLabel(`ComfyUI prompt of scene ${i + 1}`).fill(prompt)
+    await scenes.nth(i).getByRole('radiogroup', { name: `Previews of scene ${i + 1}` }).getByRole('radio', { name: '1' }).click()
+  }
+  return scenes
+}
+
+test('AI scene finals: all previews, all finals with one progress panel, a failed scene retried alone, then onto the timeline', async ({ page }) => {
+  const backend = await fakeBackend(page, { library: [libraryItem('m-stock', { name: 'Stock clouds' })] })
+  await makeVoiceover(page)
+  const panel = await openScenes(page)
+  await panel.getByRole('button', { name: 'Create scenes from script' }).click()
+  const scenes = await aiScenes(page)
+  const allFinals = panel.getByRole('button', { name: 'Generate all finals' })
+  await expect(allFinals).toBeDisabled()
+  await expect(page.getByTestId('batch-note')).toHaveText('Generate all finals: Choose a preview (Use this) for scenes 1, 2 and 3 first.')
+
+  // Generate all previews: each scene's previews, followed in one panel with a total.
+  await panel.getByRole('button', { name: 'Generate all previews' }).click()
+  await expect.poll(() => backend.shotRequests.map((r) => r.prompt)).toEqual(PROMPTS)
+  const steps = page.getByTestId('run-step-text')
+  const total = page.getByTestId('run-total')
+  await expect(steps).toHaveText(['Previews: 0 of 1 done, queued', 'Previews: 0 of 1 done, queued (1 ahead)', 'Previews: 0 of 1 done, queued (2 ahead)'])
+  await expect(total).toHaveText('Total 0%')
+  backend.runShot(0, 'running', 0.5)
+  await expect(steps.first()).toHaveText('Previews: 0 of 1 done, generating 50%')
+  await expect(total).toHaveText('Total 17%')
+  for (const i of [0, 1, 2]) backend.runShot(i, 'done')
+  await expect(total).toHaveText('Total 100% · done')
+  await expect(page.getByText('Selected')).toHaveCount(0) // it chose none of them
+  await expect(panel.getByRole('button', { name: 'Generate all previews' })).toBeDisabled() // every scene has some
+
+  // Choosing a preview in every scene makes Generate all finals available.
+  for (const i of [0, 1, 2]) await scenes.nth(i).getByTestId('scene-preview').getByRole('button', { name: 'Use this' }).click()
+  await allFinals.click()
+  await expect.poll(() => backend.finalRequests.length).toBe(3)
+  const previewIds = backend.shots.filter((s) => s.kind === 'preview').map((s) => s.itemId)
+  expect(backend.finalRequests.map((r) => [r.previewItemId, r.seed])).toEqual(previewIds.map((id) => [id, undefined]))
+  await expect(steps).toHaveText(['Final: queued', 'Final: queued (1 ahead)', 'Final: queued (2 ahead)'])
+
+  // One done, one failing, one running: the failure shows its error and a Retry of its own.
+  const finalOf = (n: number) => backend.shots.filter((s) => s.kind === 'final')[n].id
+  const run = (id: string, change: 'running' | 'done' | 'error', progress?: number) =>
+    backend.runShot(backend.shots.findIndex((s) => s.id === id), change, progress)
+  const [first, second, third] = [finalOf(0), finalOf(1), finalOf(2)]
+  run(first, 'done')
+  run(second, 'error')
+  run(third, 'running', 0.4)
+  await expect(steps).toHaveText(['Final: done', 'Final: failed', 'Final: generating 40%'])
+  await expect(total).toHaveText('Total 47%')
+  const failed = page.getByTestId('run-step').nth(1)
+  await expect(failed).toContainText('ComfyUI failed in SamplerCustomAdvanced (405:344): CUDA out of memory')
+  await expect(scenes.nth(1).getByTestId('scene-final-row')).toContainText('Failed')
+  await failed.getByRole('button', { name: 'Retry scene 2' }).click()
+  await expect.poll(() => backend.finalRequests.length).toBe(4)
+  expect(backend.finalRequests[3]).toEqual({ ...backend.finalRequests[1], seed: 42 }) // same preview, same refine seed
+  await expect(steps).toHaveText(['Final: done', 'Final: queued (1 ahead)', 'Final: generating 40%']) // behind the one running
+  run(third, 'done')
+  run(backend.shots[backend.shots.length - 1].id, 'done')
+  await expect(total).toHaveText('Total 100% · done')
+  await expect(scenes.nth(0).getByTestId('scene-final-row')).toContainText('Final from preview 1')
+  await expect(scenes.nth(0).getByTestId('scene-final-row')).toContainText('Completed')
+
+  // A stock clip already covers part of scene 1 (0 to 2 s).
+  await page.getByRole('tab', { name: 'Media' }).click()
+  await page.getByRole('button', { name: 'Add “Stock clouds” to the timeline' }).click()
+  await openScenes(page)
+  const clips = page.getByTestId('timeline-clip')
+  await expect(clips).toHaveCount(1)
+
+  // Add all asks first; "only the empty scenes" leaves scene 1 as it is. One undo step.
+  await panel.getByRole('button', { name: 'Add all to timeline' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add all finals to the timeline' })
+  await expect(dialog).toContainText('This scene already has clips in its time:Scene 1 (0:00.00–0:03.00)')
+  await dialog.getByRole('button', { name: 'Only the 2 empty scenes' }).click()
+  const titles = ['Stock clouds · 0:00.00–0:02.00', `Final: ${PROMPTS[1]} · 0:03.00–0:05.33`, `Final: ${PROMPTS[2]} · 0:05.33–0:08.00`]
+  await expect(clips).toHaveCount(3)
+  for (const [i, title] of titles.entries()) await expect(clips.nth(i)).toHaveAttribute('title', title)
+  await expect(scenes.nth(1).getByTestId('scene-final-row')).toContainText('On the timeline') // so it isn't added twice
+
+  // Scene 1's own Add to timeline asks before replacing the stock clip.
+  const questions: string[] = []
+  page.once('dialog', (question) => {
+    questions.push(question.message())
+    void question.accept()
+  })
+  await scenes.nth(0).getByRole('button', { name: 'Add to timeline' }).click()
+  expect(questions).toEqual(['Scene 1 already has clips between 0:00.00 and 0:03.00. Replace them with its final? Undo (Ctrl+Z) brings them back.'])
+  await expect(clips.nth(0)).toHaveAttribute('title', `Final: ${PROMPTS[0]} · 0:00.00–0:03.00`)
+  await expect(clips).toHaveCount(3)
+  await expect(panel.getByRole('button', { name: 'Add all to timeline' })).toBeDisabled() // every final is there
+
+  // Undo brings the stock clip back; Undo again takes both finals out at once.
+  await undo(page)
+  for (const [i, title] of titles.entries()) await expect(clips.nth(i)).toHaveAttribute('title', title)
+  await undo(page)
+  await expect(clips).toHaveCount(1)
+  await expect(clips.first()).toHaveAttribute('title', titles[0])
+
+  // Regenerate final: scene 3's final again from the same preview, with a new refine seed.
+  await scenes.nth(2).getByRole('button', { name: 'Regenerate final' }).click()
+  await expect.poll(() => backend.finalRequests.length).toBe(5)
+  expect(backend.finalRequests[4]).toMatchObject({ previewItemId: previewIds[2], scene: backend.finalRequests[2].scene })
+  expect(backend.finalRequests[4].seed).toEqual(expect.any(Number))
+  expect(backend.finalRequests[4].seed).not.toBe(42)
+  await expect(steps).toHaveText(['Final: queued'])
+
+  // All of it is saved with the project.
+  await expect(page.locator('[data-state="saved"]')).toBeVisible()
+  await page.reload()
+  await openScenes(page)
+  await expect(scenes.nth(0).getByTestId('scene-final-row')).toContainText('Completed')
+  await expect(scenes.nth(2).getByTestId('scene-final-row')).toContainText('Queued')
+  await expect(steps).toHaveText(['Final: queued'])
+})
+
+test('a preview made before finals could match says so, and offers no final', async ({ page }) => {
+  const backend = await fakeBackend(page, { previewLatents: false })
+  await makeVoiceover(page)
+  const panel = await openScenes(page)
+  await panel.getByRole('button', { name: 'Create scenes from script' }).click()
+  const scene = page.getByTestId('scene').first()
+  await scene.getByLabel('ComfyUI prompt of scene 1').fill(PROMPT)
+  await scene.getByRole('radiogroup', { name: 'Previews of scene 1' }).getByRole('radio', { name: '1' }).click()
+  await scene.getByRole('button', { name: 'Generate previews' }).click()
+  backend.runShot(0, 'done')
+  const preview = scene.getByTestId('scene-preview')
+  await expect(preview).toContainText('Completed')
+  await expect(preview.getByTestId('old-preview')).toHaveText('Made before finals could match previews: a final made from it would be a different video.')
+  const final = scene.getByTestId('scene-final')
+  await expect(final.getByRole('button', { name: 'Generate final' })).toBeDisabled()
+  await expect(final).toContainText('Choose a preview first (Use this): the final is made from it.')
+
+  await preview.getByRole('button', { name: 'Use this' }).click()
+  await expect(final.getByTestId('final-mismatch')).toHaveText(
+    'This preview was made before finals could match their previews, so a final made from it would be a different video. Generate new previews and use one of those.',
+  )
+  await expect(final.getByRole('button', { name: 'Generate final' })).toBeDisabled()
+  expect(backend.finalRequests).toEqual([])
 })

@@ -40,24 +40,31 @@ class Target:
         return f"{self.label} (the “{self.input}” input of a {self.class_type} node{titled})"
 
 
-def _upstream(workflow: Workflow, node_id: str, stop: set[str]) -> set[str]:
-    """Node types reachable by following a node's inputs, not going past `stop` types."""
+def is_link(value: Any) -> bool:
+    """An input connected to another node's output: [node id, output index]."""
+    return isinstance(value, list) and len(value) == 2 and isinstance(value[0], str) and isinstance(value[1], int)
+
+
+def _reachable(workflow: Workflow, node_id: str | None, stop: frozenset[str] | set[str] = frozenset()) -> set[str]:
+    """Ids of the nodes reached by following a node's inputs (itself included), not going past
+    nodes of the `stop` types."""
     seen: set[str] = set()
-    found: set[str] = set()
-    pending = [node_id]
+    pending = [node_id] if node_id else []
     while pending:
         current = pending.pop()
         if current in seen or current not in workflow:
             continue
         seen.add(current)
         node = workflow[current]
-        found.add(node.get("class_type", ""))
         if current != node_id and node.get("class_type") in stop:
             continue
-        for value in (node.get("inputs") or {}).values():
-            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
-                pending.append(value[0])
-    return found
+        pending.extend(value[0] for value in (node.get("inputs") or {}).values() if is_link(value))
+    return seen
+
+
+def _upstream(workflow: Workflow, node_id: str, stop: set[str]) -> set[str]:
+    """Node types reachable by following a node's inputs, not going past `stop` types."""
+    return {workflow[n].get("class_type", "") for n in _reachable(workflow, node_id, stop)}
 
 
 def first_pass_noise(workflow: Workflow, candidates: list[str]) -> list[str]:
@@ -168,3 +175,188 @@ def output_node(workflow: Workflow) -> str:
     if node_id is None:
         raise WorkflowError(f"The workflow can't be used: {OUTPUT.describe()} is missing.")
     return node_id
+
+
+# Previews and finals (the Scenes tab) -------------------------------------------------------------
+#
+# A scene's final has to be the preview you chose, made bigger and sharper, not a new video (the
+# same seed at another size makes a different one). LTX-2.5 already works that way: a first pass
+# at half size, then LTXVLatentUpsampler doubles its latent and a refine pass sharpens it. So a
+# preview runs only the first pass, decodes it straight away and saves its video and audio
+# latents (SaveLatent); its final loads those latents (LoadLatent) and runs only the upscale and
+# refine passes. Both are made from the same workflow file by rewiring it, so a final is exactly
+# what the whole workflow would have made from that preview's first pass.
+
+SAMPLER = "SamplerCustomAdvanced"
+SPLIT = "LTXVSeparateAVLatent"
+UPSCALER = "LTXVLatentUpsampler"
+TEXT_ENCODER = "CLIPTextEncode"
+
+
+@dataclass(frozen=True)
+class Passes:
+    """Where the two sampling passes are in the workflow."""
+
+    first: str  # the first pass's sampler
+    first_latents: str  # the Separate AV Latent after it: output 0 is the video latent, 1 the audio
+    refine: str  # the refine pass's sampler (after the upscaler)
+    refine_latents: str  # the Separate AV Latent after it, which the video is decoded from
+    prompt_encoder: str | None  # the CLIPTextEncode reading the prompt for the refine pass
+
+
+def _source(node: dict[str, Any], name: str) -> str | None:
+    value = (node.get("inputs") or {}).get(name)
+    return value[0] if is_link(value) else None
+
+
+def _splits_of(workflow: Workflow, sampler: str) -> list[str]:
+    return [
+        node_id
+        for node_id, node in workflow.items()
+        if node.get("class_type") == SPLIT and (node.get("inputs") or {}).get("av_latent") == [sampler, 0]
+    ]
+
+
+def _prompt_encoder(workflow: Workflow, sampler: str) -> str | None:
+    """The CLIPTextEncode behind a sampler's positive conditioning (guider → … → positive)."""
+    node_id = _source(workflow[sampler], "guider")
+    for _ in range(8):
+        if node_id is None or node_id not in workflow:
+            return None
+        if workflow[node_id].get("class_type") == TEXT_ENCODER:
+            return node_id
+        node_id = _source(workflow[node_id], "positive")
+    return None
+
+
+def find_passes(workflow: Workflow) -> Passes:
+    """The two sampling passes, or a WorkflowError saying why finals can't match previews."""
+
+    def problem(reason: str) -> WorkflowError:
+        return WorkflowError(f"Finals can't be made from previews with this workflow: {reason}.")
+
+    samplers = [n for n, node in workflow.items() if node.get("class_type") == SAMPLER]
+    firsts = [n for n in samplers if "EmptyLTXVLatentVideo" in _upstream(workflow, _source(workflow[n], "latent_image") or "", {SAMPLER, UPSCALER})]
+    if len(firsts) != 1:
+        raise problem(f"it needs one first sampling pass (a {SAMPLER} starting from an Empty LTXV Latent Video), and has {len(firsts)}")
+    first = firsts[0]
+    splits = _splits_of(workflow, first)
+    if len(splits) != 1:
+        raise problem(f"the first pass's result has to go into one Separate AV Latent node ({SPLIT}), and goes into {len(splits)}")
+    first_latents = splits[0]
+    upscalers = [n for n, node in workflow.items() if node.get("class_type") == UPSCALER and _source(node, "samples") == first_latents]
+    if len(upscalers) != 1:
+        raise problem(f"the first pass's video latent has to go into one {UPSCALER} node, and goes into {len(upscalers)}")
+    refines = [n for n in samplers if n != first and upscalers[0] in _reachable(workflow, _source(workflow[n], "latent_image"), {SAMPLER})]
+    if len(refines) != 1:
+        raise problem(f"it needs one refine pass (a {SAMPLER} sampling the upscaled latent), and has {len(refines)}")
+    refine = refines[0]
+    splits = _splits_of(workflow, refine)
+    if len(splits) != 1:
+        raise problem(f"the refine pass's result has to go into one Separate AV Latent node ({SPLIT}), and goes into {len(splits)}")
+    output = find(workflow, OUTPUT)
+    if output is None or splits[0] not in _reachable(workflow, output):
+        raise problem("the Save Video node doesn't save the refine pass's result")
+    return Passes(first, first_latents, refine, splits[0], _prompt_encoder(workflow, refine))
+
+
+def finals_problem(workflow: Workflow) -> str | None:
+    """Why finals can't match their previews with this workflow (None when they can)."""
+    try:
+        find_passes(workflow)
+    except WorkflowError as exc:
+        return exc.message
+    return None
+
+
+def _relink(workflow: Workflow, links: dict[tuple[str, int], list[Any]]) -> None:
+    """Points every input connected to one of `links`' outputs at its replacement."""
+    for node in workflow.values():
+        inputs = node.get("inputs") or {}
+        for name, value in inputs.items():
+            if is_link(value) and (value[0], value[1]) in links:
+                inputs[name] = list(links[(value[0], value[1])])
+
+
+def _prune(workflow: Workflow, outputs: list[str]) -> Workflow:
+    """Only the given output nodes and what they need."""
+    keep: set[str] = set()
+    for node_id in outputs:
+        keep |= _reachable(workflow, node_id)
+    return {node_id: node for node_id, node in workflow.items() if node_id in keep}
+
+
+def _new_ids(workflow: Workflow, count: int) -> list[str]:
+    """Numeric node ids the workflow doesn't use yet."""
+    numbers = [int(part) for node_id in workflow for part in node_id.split(":") if part.isdigit()]
+    start = max(numbers, default=0) + 1
+    return [str(start + i) for i in range(count)]
+
+
+def refine_seed(workflow: Workflow) -> int | None:
+    """The refine pass's own seed (the workflow keeps it; regenerating a final can change it)."""
+    passes = find_passes(workflow)
+    noise = _source(workflow[passes.refine], "noise")
+    value = (workflow.get(noise or "", {}).get("inputs") or {}).get("noise_seed")
+    return value if isinstance(value, int) else None
+
+
+def preview_workflow(workflow: Workflow, latent_prefix: str) -> tuple[Workflow, dict[str, str]]:
+    """A scene preview: the filled-in workflow's first pass only, decoded by the workflow's own
+    decoders and saved by its Save Video node, plus SaveLatent nodes for the video and audio
+    latents its final starts from. Returns the workflow and the ids of the added nodes:
+    "videoLatent", "audioLatent" and, when the prompt text comes from other nodes (the prompt
+    enhancer), "promptText", whose result is the exact text the final has to use."""
+    passes = find_passes(workflow)
+    output = output_node(workflow)
+    graph = copy.deepcopy(workflow)
+    _relink(graph, {(passes.refine_latents, 0): [passes.first_latents, 0], (passes.refine_latents, 1): [passes.first_latents, 1]})
+    video, audio, text = _new_ids(graph, 3)
+    added = {"videoLatent": video, "audioLatent": audio}
+    for node_id, index, kind in ((video, 0, "video"), (audio, 1, "audio")):
+        graph[node_id] = {
+            "inputs": {"samples": [passes.first_latents, index], "filename_prefix": f"{latent_prefix}_{kind}"},
+            "class_type": "SaveLatent",
+            "_meta": {"title": f"Save the preview's {kind} latent (Shorts Creator)"},
+        }
+    prompt = (graph[passes.prompt_encoder]["inputs"].get("text") if passes.prompt_encoder else None)
+    if is_link(prompt):
+        graph[text] = {"inputs": {"source": list(prompt)}, "class_type": "PreviewAny", "_meta": {"title": "Prompt text (Shorts Creator)"}}
+        added["promptText"] = text
+    return _prune(graph, [output, *added.values()]), added
+
+
+def final_workflow(
+    workflow: Workflow,
+    *,
+    video_latent: str,
+    audio_latent: str,
+    prompt_text: str | None = None,
+    seed: int | None = None,
+) -> Workflow:
+    """A scene final: LoadLatent nodes with the preview's latents (files in ComfyUI's input
+    folder) in place of the first pass, then the workflow's upscale and refine passes. With
+    `prompt_text` the refine pass reads exactly that text (what the preview's prompt became);
+    with `seed` the refine pass uses that seed instead of the workflow's."""
+    passes = find_passes(workflow)
+    output = output_node(workflow)
+    graph = copy.deepcopy(workflow)
+    video, audio = _new_ids(graph, 2)
+    for node_id, name, kind in ((video, video_latent, "video"), (audio, audio_latent, "audio")):
+        graph[node_id] = {
+            "inputs": {"latent": name},
+            "class_type": "LoadLatent",
+            "_meta": {"title": f"The preview's {kind} latent (Shorts Creator)"},
+        }
+    _relink(graph, {(passes.first_latents, 0): [video, 0], (passes.first_latents, 1): [audio, 0]})
+    if prompt_text is not None and passes.prompt_encoder:
+        graph[passes.prompt_encoder]["inputs"]["text"] = prompt_text
+    if seed is not None:
+        noise = _source(graph[passes.refine], "noise")
+        if noise is None or "noise_seed" not in (graph[noise].get("inputs") or {}):
+            raise WorkflowError("The workflow can't be used: the refine pass's seed (a RandomNoise node) is missing.")
+        graph[noise]["inputs"]["noise_seed"] = seed
+    graph = _prune(graph, [output])
+    if passes.first in graph:
+        raise WorkflowError("Finals can't be made from previews with this workflow: the refine pass still needs the first pass.")
+    return graph

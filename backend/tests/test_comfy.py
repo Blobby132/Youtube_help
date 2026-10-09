@@ -140,6 +140,79 @@ def test_progress_follows_the_two_sampling_passes() -> None:
     assert 0 < first < progress.fraction() <= 0.95
 
 
+# Scene previews and finals: the workflow split in two ------------------------------------------
+
+FIRST_PASS = {"405:344", "405:339", "405:352", "405:388", "405:404", "405:377", "405:356", "405:366", "405:353", "405:355", "405:378", "405:360", "405:372", "405:362", "409"}
+REFINE_PASS = {"405:348", "405:371", "405:340", "405:368", "405:338", "405:341", "405:391", "405:395", "405:369"}
+
+
+def links(node: dict) -> dict:
+    return {name: value for name, value in node["inputs"].items() if wf.is_link(value)}
+
+
+def test_the_real_workflow_has_two_passes_to_split() -> None:
+    passes = wf.find_passes(wf.load(WORKFLOW))
+    assert passes == wf.Passes(first="405:344", first_latents="405:367", refine="405:368", refine_latents="405:369", prompt_encoder="405:364")
+    assert wf.finals_problem(wf.load(WORKFLOW)) is None
+    assert wf.refine_seed(wf.load(WORKFLOW)) == 42
+
+
+def test_a_preview_is_the_first_pass_with_its_latents_saved() -> None:
+    full = wf.apply(wf.load(WORKFLOW), prompt=PROMPT, seed=12345, megapixels=0.8, duration=3)
+    preview, added = wf.preview_workflow(full, "latents/shorts_g-1")
+    assert added == {"videoLatent": "410", "audioLatent": "411", "promptText": "412"}
+    # No upscale or refine pass; the workflow's own decoders and Save Video show the first pass.
+    assert not REFINE_PASS & set(preview)
+    assert preview["405:374"]["inputs"]["samples"] == ["405:367", 0]
+    assert preview["405:358"]["inputs"]["samples"] == ["405:367", 1]
+    assert preview["75"] == full["75"]
+    # The first pass itself is the full workflow's, node for node, at the shot's size and seed.
+    for node_id in FIRST_PASS:
+        assert preview[node_id] == full[node_id]
+    assert preview["409"]["inputs"]["megapixels"] == 0.8 and preview["405:339"]["inputs"]["noise_seed"] == 12345
+    # Its video and audio latents are saved, and the text the prompt became is shown.
+    assert preview["410"] == {"inputs": {"samples": ["405:367", 0], "filename_prefix": "latents/shorts_g-1_video"}, "class_type": "SaveLatent", "_meta": {"title": "Save the preview's video latent (Shorts Creator)"}}
+    assert preview["411"]["inputs"] == {"samples": ["405:367", 1], "filename_prefix": "latents/shorts_g-1_audio"}
+    assert preview["412"]["class_type"] == "PreviewAny" and preview["412"]["inputs"] == {"source": ["405:382", 0]}
+    assert full["405:374"]["inputs"]["samples"] == ["405:369", 0]  # the workflow passed in isn't changed
+
+
+def test_a_final_is_the_upscale_and_refine_passes_on_the_previews_latents() -> None:
+    full = wf.apply(wf.load(WORKFLOW), prompt=PROMPT, seed=12345, megapixels=0.8, duration=3)
+    final = wf.final_workflow(full, video_latent="shorts_m-1_video.latent", audio_latent="shorts_m-1_audio.latent", prompt_text="An enhanced fox")
+    assert final["410"] == {"inputs": {"latent": "shorts_m-1_video.latent"}, "class_type": "LoadLatent", "_meta": {"title": "The preview's video latent (Shorts Creator)"}}
+    assert final["411"]["inputs"] == {"latent": "shorts_m-1_audio.latent"}
+    # Nothing of the first pass runs again (not even the size, length or prompt enhancer).
+    assert not FIRST_PASS & set(final)
+    assert not {"405:380", "405:382", "405:376", "405:393"} & set(final)
+    # Everything else is the full workflow's, node for node, except where the first pass came in.
+    assert final["405:348"]["inputs"]["samples"] == ["410", 0]
+    assert final["405:340"]["inputs"]["audio_latent"] == ["411", 0]
+    assert final["405:364"]["inputs"]["text"] == "An enhanced fox"
+    for node_id in set(final) - {"410", "411", "405:348", "405:340", "405:364"}:
+        assert final[node_id] == full[node_id], node_id
+    assert {k: v for k, v in final["405:348"]["inputs"].items() if k != "samples"} == {k: v for k, v in full["405:348"]["inputs"].items() if k != "samples"}
+    assert final["405:338"]["inputs"]["noise_seed"] == 42  # the workflow's refine seed, unless asked
+    assert final["75"] == full["75"]
+
+    again = wf.final_workflow(full, video_latent="v.latent", audio_latent="a.latent", seed=999)
+    assert again["405:338"]["inputs"]["noise_seed"] == 999
+    assert again["405:364"]["inputs"]["text"] == ["405:382", 0]  # no text given: the prompt as the workflow reads it
+
+
+def test_a_workflow_without_two_passes_says_finals_cant_match() -> None:
+    single = real_workflow()
+    # One pass: the video is decoded from the first pass, and the upscale and refine are gone.
+    single["405:374"]["inputs"]["samples"] = ["405:367", 0]
+    single["405:358"]["inputs"]["samples"] = ["405:367", 1]
+    for node_id in REFINE_PASS - {"405:338", "405:341", "405:391", "405:395"}:
+        single.pop(node_id)
+    assert wf.finals_problem(single) == (
+        "Finals can't be made from previews with this workflow: the first pass's video latent has to go "
+        "into one LTXVLatentUpsampler node, and goes into 0."
+    )
+
+
 # Jobs against a fake ComfyUI ---------------------------------------------------------------------
 
 
@@ -209,6 +282,7 @@ def test_status_reports_comfyui_and_the_workflow(client: TestClient, comfy: Fake
         "error": None,
         "workflow": "ltx_t2v_api.json",
         "workflowProblem": None,
+        "finalsProblem": None,
     }
 
 
@@ -401,13 +475,17 @@ def previews(client: TestClient, count: int = 2, **body) -> list[dict]:
 
 
 @needs_ffmpeg
-def test_scene_previews_are_shots_saved_with_their_scene(client: TestClient, comfy: FakeComfy, make_service) -> None:
+def test_scene_previews_are_shots_saved_with_their_scene(client: TestClient, comfy: FakeComfy, make_service, service: GenerationService) -> None:
     first, second = previews(client)
     assert first["scene"] == second["scene"] == SCENE
     assert first["seed"] != second["seed"]
     sent = [comfy.submitted[j["promptId"]]["prompt"] for j in (first, second)]
     assert [s["405:339"]["inputs"]["noise_seed"] for s in sent] == [first["seed"], second["seed"]]
-    assert all(s["409"]["inputs"]["megapixels"] == 0.4 and s["405:362"]["inputs"]["value"] == 3 for s in sent)
+    # Only the first pass of a Final-quality (0.8 megapixel) shot, its latents saved.
+    assert all(s["409"]["inputs"]["megapixels"] == 0.8 and s["405:362"]["inputs"]["value"] == 3 for s in sent)
+    assert all("405:368" not in s and s["410"]["class_type"] == s["411"]["class_type"] == "SaveLatent" for s in sent)
+    assert sent[0]["410"]["inputs"]["filename_prefix"] == f"latents/shorts_{first['id']}_video"
+    assert (first["kind"], first["megapixels"], first["nodes"]) == ("preview", 0.8, {"videoLatent": "410", "audioLatent": "411", "promptText": "412"})
 
     # The scene is kept with the job, so a restarted backend still knows it.
     assert make_service().list()[0]["scene"] == SCENE
@@ -423,6 +501,12 @@ def test_scene_previews_are_shots_saved_with_their_scene(client: TestClient, com
         assert (generation["prompt"], generation["seed"], generation["quality"]) == (PROMPT, queued["seed"], "draft")
         assert (generation["type"], generation["projectId"], generation["sceneId"]) == ("preview", "p-scenes", "s-three")
         assert generation["shotId"] == queued["id"]
+        assert generation["promptText"] == PROMPT
+        # Its first pass's latents are kept with it in the library, for its final.
+        for kind in ("video", "audio"):
+            assert item["latents"][kind] == f"{item['id']}-{kind}.latent"
+            saved = comfy.submitted[queued["promptId"]]["prompt"]["410" if kind == "video" else "411"]["inputs"]["samples"]
+            assert service.library.latent_path(item["id"], kind).read_bytes() == f"{queued['promptId']}:{saved}".encode()
 
 
 @needs_ffmpeg
@@ -466,3 +550,183 @@ def test_a_scene_preview_needs_its_project_and_scene(client: TestClient, service
     with pytest.raises(AppError, match="needs its project and scene"):
         service.generate(PROMPT, 3, "draft", scene={"projectId": "p-1", "sceneId": " "})
     assert service.list() == []
+
+
+# Scene finals (the Scenes tab) -------------------------------------------------------------------
+
+
+def final(client: TestClient, item_id: str, scene: dict | None = None, **body) -> dict:
+    response = client.post("/api/comfy/finals", json={"previewItemId": item_id, "scene": scene or SCENE, **body})
+    assert response.status_code == 200, response.text
+    return response.json()["job"]
+
+
+def finish_previews(client: TestClient, comfy: FakeComfy, scene: dict = SCENE, count: int = 1, **body) -> list[dict]:
+    """Makes a scene's previews and runs them; returns their library items."""
+    queued = shots(client, duration=3, quality="draft", variations=count, scene=scene, **body)
+    for one in queued:
+        comfy.finish(comfy.start_next())
+        wait_until(lambda: job(client, one["id"])["status"] == "done", what="the preview")
+    items = {item["id"]: item for item in client.get("/api/library").json()}
+    return [items[job(client, one["id"])["itemId"]] for one in queued]
+
+
+@needs_ffmpeg
+def test_a_final_is_made_from_the_chosen_previews_own_latents(client: TestClient, comfy: FakeComfy, service: GenerationService) -> None:
+    comfy.enhanced_prompt = "A red fox trots through deep, powdery snow at dusk; slow tracking shot"
+    first, chosen = finish_previews(client, comfy, count=2)
+
+    queued = final(client, chosen["id"])
+    assert (queued["kind"], queued["scene"], queued["previewItemId"], queued["refineSeed"]) == ("final", SCENE, chosen["id"], 42)
+    assert (queued["seed"], queued["prompt"], queued["duration"], queued["quality"]) == (chosen["generation"]["seed"], PROMPT, 3, "final")
+
+    # The chosen preview's saved latents went to ComfyUI's input folder, and the final loads them.
+    assert comfy.uploads == {
+        f"shorts_{chosen['id']}_{kind}.latent": service.library.latent_path(chosen["id"], kind).read_bytes() for kind in ("video", "audio")
+    }
+    sent = comfy.submitted[queued["promptId"]]["prompt"]
+    assert sent["410"]["inputs"]["latent"] == f"shorts_{chosen['id']}_video.latent"
+    assert sent["411"]["inputs"]["latent"] == f"shorts_{chosen['id']}_audio.latent"
+    assert sent["405:348"]["inputs"]["samples"] == ["410", 0] and sent["405:340"]["inputs"]["audio_latent"] == ["411", 0]
+    # No first pass: nothing that could make a different video. The prompt is the text the preview used.
+    assert not FIRST_PASS & set(sent)
+    assert sent["405:364"]["inputs"]["text"] == comfy.enhanced_prompt
+
+    # Progress follows the one sampling pass that runs.
+    prompt_id = comfy.start_next()
+    comfy.progress(prompt_id, "405:368", 2, 3)
+    wait_until(lambda: job(client, queued["id"])["message"] == "Generating (step 2 of 3)…", what="the final's progress")
+    comfy.finish(prompt_id)
+    wait_until(lambda: job(client, queued["id"])["status"] == "done", what="the final to be saved")
+    item = next(i for i in client.get("/api/library").json() if i["id"] == job(client, queued["id"])["itemId"])
+    assert item["name"] == "Final: A red fox trots through deep snow at dusk, slow…"
+    assert item["source"] == "ai" and item["aiGenerated"] is True and item["latents"] is None
+    generation = item["generation"]
+    assert (generation["type"], generation["projectId"], generation["sceneId"]) == ("final", "p-scenes", "s-three")
+    assert (generation["previewItemId"], generation["previewShotId"], generation["shotId"]) == (chosen["id"], chosen["generation"]["shotId"], queued["id"])
+    assert (generation["seed"], generation["refineSeed"], generation["quality"]) == (chosen["generation"]["seed"], 42, "final")
+    assert generation["basedOn"] == chosen["id"]
+
+    # "Regenerate final": the same preview with a new refine seed. The other preview is untouched.
+    again = final(client, chosen["id"], seed=777)
+    assert again["refineSeed"] == 777 and comfy.submitted[again["promptId"]]["prompt"]["405:338"]["inputs"]["noise_seed"] == 777
+    assert set(comfy.uploads) == {f"shorts_{chosen['id']}_video.latent", f"shorts_{chosen['id']}_audio.latent"}
+    assert next(i for i in client.get("/api/library").json() if i["id"] == first["id"]) == first
+
+
+@needs_ffmpeg
+def test_finals_for_every_scene_queue_and_run_one_at_a_time_and_a_failure_retries_alone(client: TestClient, comfy: FakeComfy) -> None:
+    scenes = [{"projectId": "p-scenes", "sceneId": f"s-{n}"} for n in (1, 2, 3)]
+    chosen = [finish_previews(client, comfy, scene)[0] for scene in scenes]
+    jobs = [final(client, item["id"], scene) for item, scene in zip(chosen, scenes, strict=True)]
+    assert [j["scene"]["sceneId"] for j in jobs] == ["s-1", "s-2", "s-3"]
+    assert comfy.pending == [j["promptId"] for j in jobs]  # all in ComfyUI's queue, which runs one at a time
+
+    first = comfy.start_next()
+    wait_until(lambda: [job(client, j["id"])["queuePosition"] for j in jobs] == [0, 1, 2], what="queue positions")
+    comfy.finish(first)
+    wait_until(lambda: job(client, jobs[0]["id"])["status"] == "done", what="the first final")
+
+    # Scene 2's final fails with ComfyUI's reason; scene 3's keeps going.
+    comfy.finish(comfy.start_next(), error="CUDA out of memory. Tried to allocate 2.00 GiB")
+    wait_until(lambda: job(client, jobs[1]["id"])["status"] == "error", what="the failure")
+    assert job(client, jobs[1]["id"])["error"] == "ComfyUI failed in SamplerCustomAdvanced (405:344): CUDA out of memory. Tried to allocate 2.00 GiB"
+    comfy.finish(comfy.start_next())
+    wait_until(lambda: job(client, jobs[2]["id"])["status"] == "done", what="the third final")
+
+    # Retry: only scene 2's final again, from the same preview with the same refine seed.
+    submitted = len(comfy.submitted)
+    retry = final(client, chosen[1]["id"], scenes[1], seed=jobs[1]["refineSeed"])
+    assert len(comfy.submitted) == submitted + 1
+    assert (retry["previewItemId"], retry["refineSeed"], retry["scene"]) == (chosen[1]["id"], 42, scenes[1])
+    comfy.finish(comfy.start_next())
+    wait_until(lambda: job(client, retry["id"])["status"] == "done", what="the retried final")
+
+    finals = [i["generation"] for i in client.get("/api/library").json() if (i["generation"] or {}).get("type") == "final"]
+    assert sorted((g["sceneId"], g["previewItemId"]) for g in finals) == [("s-1", chosen[0]["id"]), ("s-2", chosen[1]["id"]), ("s-3", chosen[2]["id"])]
+
+
+@needs_ffmpeg
+def test_a_cancelled_final_comes_back_as_cancelled(client: TestClient, comfy: FakeComfy) -> None:
+    [item] = finish_previews(client, comfy)
+    queued = final(client, item["id"])
+    assert client.post(f"/api/comfy/shots/{queued['id']}/cancel").json()["status"] == "cancelled"
+    assert comfy.deleted == [queued["promptId"]]
+
+
+def test_a_final_needs_a_preview_with_its_latents(client: TestClient, comfy: FakeComfy, service: GenerationService, video: Path, tmp_path: Path) -> None:
+    from app.library.store import ClipMetadata
+
+    # A preview made before finals could match (part A): no latents with it.
+    copy_of = tmp_path / "old.mp4"
+    copy_of.write_bytes(video.read_bytes())
+    old = service.library.add_clip(copy_of, "ai", ClipMetadata(name="Old", generation={"type": "preview", "prompt": PROMPT, "seed": 5, **SCENE}))
+    response = client.post("/api/comfy/finals", json={"previewItemId": old["id"], "scene": SCENE})
+    assert response.status_code == 409
+    assert response.json()["detail"] == service_module.OLD_PREVIEW
+    assert "made before finals could match their previews" in response.json()["detail"]
+
+    # Not a preview at all, or gone from the library.
+    other = tmp_path / "other.mp4"
+    other.write_bytes(video.read_bytes())
+    shot = service.library.add_clip(other, "ai", ClipMetadata(name="Shot", generation={"prompt": PROMPT, "seed": 5}))
+    assert client.post("/api/comfy/finals", json={"previewItemId": shot["id"], "scene": SCENE}).status_code == 400
+    assert client.post("/api/comfy/finals", json={"previewItemId": "m-gone", "scene": SCENE}).status_code == 404
+    assert comfy.submitted == {} and comfy.uploads == {}
+
+
+@needs_ffmpeg
+def test_a_preview_whose_latents_werent_saved_fails_and_says_so(client: TestClient, comfy: FakeComfy) -> None:
+    comfy.save_latents = False
+    [queued] = previews(client, count=1)
+    comfy.finish(comfy.start_next())
+    wait_until(lambda: job(client, queued["id"])["status"] == "error", what="the error")
+    assert "didn't save its video latent, so no final could match it" in job(client, queued["id"])["error"]
+    assert client.get("/api/library").json() == []
+
+
+def test_scene_previews_and_finals_need_a_workflow_with_two_passes(make_service, comfy_settings: Settings, comfy: FakeComfy, tmp_path: Path) -> None:
+    single = real_workflow()
+    single["405:374"]["inputs"]["samples"] = ["405:367", 0]
+    single["405:358"]["inputs"]["samples"] = ["405:367", 1]
+    for node_id in ("405:348", "405:371", "405:340", "405:368", "405:369"):
+        single.pop(node_id)
+    path = tmp_path / "ltx_t2v_api.json"
+    path.write_text(json.dumps(single))
+    service = make_service(dataclasses.replace(comfy_settings, comfy_workflow=path))
+    status = service.status()
+    assert status["workflowProblem"] is None  # ordinary shots still work
+    assert status["finalsProblem"].startswith("Finals can't be made from previews with this workflow")
+    with pytest.raises(wf.WorkflowError, match="Finals can't be made from previews"):
+        service.generate(PROMPT, 3, "draft", scene=SCENE)
+    assert service.generate(PROMPT, 3, "draft")[0]["kind"] == "shot"
+    assert len(comfy.submitted) == 1
+
+
+@needs_ffmpeg
+def test_deleting_a_preview_deletes_its_latents(client: TestClient, comfy: FakeComfy, service: GenerationService) -> None:
+    [item] = finish_previews(client, comfy)
+    paths = [service.library.latent_path(item["id"], kind) for kind in ("video", "audio")]
+    assert all(path.is_file() for path in paths)
+    assert client.delete(f"/api/library/{item['id']}").status_code == 200
+    assert not any(path.exists() for path in paths)
+
+
+@needs_ffmpeg
+def test_a_final_keeps_going_after_a_restart(make_service, comfy: FakeComfy) -> None:
+    before = make_service()
+    [preview] = before.generate(PROMPT, 3, "draft", scene=SCENE)
+    comfy.finish(comfy.start_next())
+    wait_until(lambda: before.list()[0]["status"] == "done", what="the preview")
+    queued = before.generate_final(before.list()[0]["itemId"], SCENE)
+    before.stop()
+
+    after = make_service()
+    after.resume()
+    prompt_id = comfy.start_next()
+    comfy.progress(prompt_id, "405:368", 1, 3)  # its progress, from the final's own workflow
+    wait_until(lambda: next(j for j in after.list() if j["id"] == queued["id"])["message"] == "Generating (step 1 of 3)…", what="progress")
+    comfy.finish(prompt_id)
+    wait_until(lambda: next(j for j in after.list() if j["id"] == queued["id"])["status"] == "done", what="the resumed final")
+    item = after.library.get(next(j for j in after.list() if j["id"] == queued["id"])["itemId"])
+    assert item["generation"]["type"] == "final" and item["generation"]["previewShotId"] == preview["id"]

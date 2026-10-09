@@ -208,6 +208,48 @@ export interface ScenePreview {
   createdAt: string
 }
 
+/**
+ * The final of an AI scene, made from its chosen preview: the preview's own first pass, upscaled
+ * and refined (the backend's Generate final), so it shows the same shot. Like previews, the
+ * project keeps its own record of each one (not on the undo history), and its video is a library
+ * clip. A scene's final is its newest one; Regenerate final adds another.
+ */
+export interface SceneFinal {
+  id: string
+  sceneId: string
+  /** The preview it's made from (an id in scenePreviews) and that preview's library clip. */
+  previewId: string
+  previewItemId: string
+  /** The job making it; a retry gets a new job with the same preview and refine seed. */
+  jobId: string
+  /** The refine pass's seed (the workflow's own for a first final, a new one for Regenerate). */
+  refineSeed: number | null
+  status: PreviewStatus
+  error: string | null
+  itemId: string | null
+  createdAt: string
+}
+
+/** One scene's part of a generation run: its previews, or its final. */
+export interface RunStep {
+  sceneId: string
+  kind: 'previews' | 'final'
+  /** What it made: preview ids, or the final's id. Empty until it's queued, or when it couldn't be. */
+  recordIds: string[]
+  /** Why it couldn't be queued (no prompt, ComfyUI closed, …); a Retry tries again. */
+  error: string | null
+}
+
+/**
+ * What the Scenes tab's progress panel shows: the previews and finals asked for together
+ * ("Generate all previews", "Generate all finals", or one scene's while those run), until a new
+ * run starts after it has finished.
+ */
+export interface GenerationRun {
+  id: string
+  steps: RunStep[]
+}
+
 export interface Project {
   id: string
   name: string
@@ -227,6 +269,8 @@ export interface Project {
   /** In time order. */
   scenes: Scene[]
   scenePreviews: ScenePreview[]
+  sceneFinals: SceneFinal[]
+  generationRun: GenerationRun | null
 }
 
 export interface ProjectSummary {
