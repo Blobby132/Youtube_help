@@ -123,5 +123,7 @@ export function generateBlocker(status: ComfyStatus | null, online: boolean): st
   if (!status) return 'Checking ComfyUI…'
   if (status.workflowProblem) return status.workflowProblem
   if (!status.reachable) return 'Open ComfyUI Desktop first: Generate shot uses it to make the clips.'
+  // The language model is writing scenes on the same GPU (the Scenes tab's Write with AI).
+  if (status.llmBusy) return status.llmBusy
   return null
 }

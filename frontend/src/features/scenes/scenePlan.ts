@@ -1,4 +1,5 @@
-// "Create scenes from script": cuts the narration into scenes by rules (part C adds AI). Every
+// "Create scenes from script": cuts the narration into scenes by rules (Write scenes with AI then
+// fills them in, and may merge or split them within the same limits: aiWrite.ts). Every
 // scene is 2 to 5 seconds long, because LTX clips fall apart beyond about 5 seconds. Cuts go at
 // sentence ends wherever that's possible; a sentence too long for one scene is cut at commas or
 // pauses, and only if those can't do it, between other words. Sentences too short for a scene of
@@ -55,12 +56,16 @@ export function sceneTiming(project: Pick<Project, 'script' | 'voiceover' | 'cap
 }
 
 /** The words in a scene's time range (by where each word's middle falls). */
+export function wordsIn(words: readonly TimedWord[], range: TimeRange): TimedWord[] {
+  return words.filter((w) => {
+    const middle = (w.start + w.end) / 2
+    return middle >= range.start - EPS && middle < range.end - EPS
+  })
+}
+
+/** The narration of a scene: its words, as text. */
 export function narration(words: readonly TimedWord[], range: TimeRange): string {
-  return words
-    .filter((w) => {
-      const middle = (w.start + w.end) / 2
-      return middle >= range.start - EPS && middle < range.end - EPS
-    })
+  return wordsIn(words, range)
     .map((w) => w.text)
     .join(' ')
 }

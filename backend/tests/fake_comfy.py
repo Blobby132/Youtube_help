@@ -47,6 +47,9 @@ class FakeComfy:
         self.enhanced_prompt: str | None = None
         # Off: SaveLatent nodes save nothing (as if they failed quietly).
         self.save_latents = True
+        # The bodies of POST /free (asking ComfyUI to unload its models); off: an older ComfyUI without it.
+        self.freed: list[dict[str, Any]] = []
+        self.can_free = True
         self.sockets: dict[str, list[WebSocket]] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
         self._counter = 0
@@ -60,6 +63,7 @@ class FakeComfy:
                 Route("/view", self.view),
                 Route("/upload/image", self.upload, methods=["POST"]),
                 Route("/interrupt", self.interrupt, methods=["POST"]),
+                Route("/free", self.free, methods=["POST"]),
                 WebSocketRoute("/ws", self.ws),
             ]
         )
@@ -143,6 +147,12 @@ class FakeComfy:
             self.interrupted.append(prompt_id)
             self._finish(prompt_id, [["execution_interrupted", {"prompt_id": prompt_id, "node_id": "405:344"}]], ok=False)
         return JSONResponse({})
+
+    async def free(self, request: Request) -> Response:
+        if not self.can_free:
+            return Response("404: Not Found", status_code=404)
+        self.freed.append(await request.json())
+        return Response(status_code=200)
 
     async def ws(self, websocket: WebSocket) -> None:
         client_id = websocket.query_params.get("clientId", "")

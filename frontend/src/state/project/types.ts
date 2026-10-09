@@ -180,7 +180,14 @@ export interface Scene {
   selectedPreviewId: string | null
   /** Stock scenes: the library item placed on the timeline from "Find footage". */
   stockItemId: string | null
+  /** What "Write scenes with AI" (or "Rewrite prompt") last put in each field. A field you've
+   * edited since (not empty, and not what the AI wrote) is never overwritten without asking. */
+  aiWritten: Partial<SceneTexts>
 }
+
+/** The fields the language model writes for a scene. */
+export type SceneTextField = 'source' | 'description' | 'searchText' | 'prompt'
+export type SceneTexts = Pick<Scene, SceneTextField>
 
 /** Where a preview's ComfyUI job is: the same states as a Generate shot job. */
 export type PreviewStatus = 'queued' | 'running' | 'saving' | 'done' | 'error' | 'cancelled'

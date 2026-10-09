@@ -283,6 +283,7 @@ def test_status_reports_comfyui_and_the_workflow(client: TestClient, comfy: Fake
         "workflow": "ltx_t2v_api.json",
         "workflowProblem": None,
         "finalsProblem": None,
+        "llmBusy": None,  # no language model run is using the GPU
     }
 
 

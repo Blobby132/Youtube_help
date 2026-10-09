@@ -32,6 +32,7 @@ from app.core.errors import AppError
 from app.core.files import atomic_write_text
 from app.library.probe import probe
 from app.library.store import ClipMetadata, Library
+from app.llm.service import get_llm_service
 from app.projects.store import utc_now
 
 log = logging.getLogger("shorts.comfy")
@@ -193,7 +194,23 @@ class GenerationService:
             problem = None
         except AppError as exc:
             problem = exc.message
-        return {**self.client.status(), "workflow": self.workflow_path.name, "workflowProblem": problem, "finalsProblem": finals}
+        return {
+            **self.client.status(),
+            "workflow": self.workflow_path.name,
+            "workflowProblem": problem,
+            "finalsProblem": finals,
+            # The language model is using the GPU, so new shots wait (llm/service.py).
+            "llmBusy": self._llm_busy(),
+        }
+
+    def _llm_busy(self) -> str | None:
+        return get_llm_service(self.settings).busy
+
+    def _check_gpu(self) -> None:
+        """ComfyUI and the language model share the GPU: no new shots while it writes."""
+        busy = self._llm_busy()
+        if busy:
+            raise AppError(busy, 409)
 
     # Jobs ----------------------------------------------------------------------------------------
 
@@ -227,6 +244,7 @@ class GenerationService:
         workflow = wf.load(self.workflow_path)
         if scene:
             wf.find_passes(workflow)  # says why finals couldn't match previews made with it
+        self._check_gpu()
         self._check_reachable()
 
         batch = f"b-{secrets.token_hex(4)}"
@@ -299,6 +317,7 @@ class GenerationService:
             raise AppError(OLD_PREVIEW, 409) from exc
         workflow = wf.load(self.workflow_path)
         wf.find_passes(workflow)
+        self._check_gpu()
         self._check_reachable()
         names = {kind: self.client.upload(path, f"shorts_{preview_item_id}_{kind}.latent") for kind, path in latents.items()}
         prompt = str(generation.get("prompt") or "")

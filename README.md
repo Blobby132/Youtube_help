@@ -7,6 +7,8 @@ backend for the heavy work. Everything is free: no paid APIs, no credits.
 - **AI voiceover** with [Kokoro TTS](https://huggingface.co/hexgrad/Kokoro-82M), running locally
 - **Word-timed captions** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), running locally
 - **Stock footage** from [Pixabay](https://pixabay.com/api/docs/) or [Pexels](https://www.pexels.com/api/) (free API keys)
+- **AI clips** with LTX-2.5 in [ComfyUI](https://www.comfy.org/), and **scene descriptions and prompts** written by a
+  language model in [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/), all on your PC
 - **Final render** with FFmpeg
 
 ## Build status
@@ -22,7 +24,8 @@ The app is built in stages. Each stage is tested before the next one starts.
 | 5 | Canvas & title, Ranking tab | ✅ done |
 | 6 | FFmpeg render | ✅ done |
 | 7 | AI Scenes, part A: scenes from the script, stock footage and AI previews per scene | ✅ done |
-| 7 | AI Scenes, part B: finals made from the chosen preview, all scenes at once, finals on the timeline | 🧪 ready to test |
+| 7 | AI Scenes, part B: finals made from the chosen preview, all scenes at once, finals on the timeline | ✅ done |
+| 7 | AI Scenes, part C: a local language model writes the scenes' descriptions and prompts | 🧪 ready to test |
 
 Working now: the full layout, autosaved projects, the script box, all three ways to make a
 voiceover (AI read, recording, upload) plus background music, word-timed captions, a media
@@ -30,8 +33,9 @@ library shared by all projects (Pixabay and Pexels search, your own clips and im
 Generate shot), a timeline whose clips, voiceover and captions play together in the preview,
 clips that fill the frame or fit inside it over a blurred or solid background, a title,
 ranking overlays for countdown videos, scenes (the video cut into 2 to 5 second stretches, each
-with stock footage, or AI previews to choose from and a final made from the chosen one), and the
-final render to a Shorts-ready MP4.
+with stock footage, or AI previews to choose from and a final made from the chosen one, their
+descriptions and prompts written by a language model on your PC if you like), and the final render
+to a Shorts-ready MP4.
 
 ## Windows setup
 
@@ -395,8 +399,9 @@ Their positions are shared numbers (`frontend/src/features/preview/captionLayout
 ## Scenes
 
 The **Scenes** tab cuts the video into scenes, each with its own picture: an AI clip made by
-ComfyUI, or stock footage from Pixabay. (Part A: the scenes are made by rules, and you type each
-scene's visual description, prompt and search text; filling them in automatically comes later.)
+ComfyUI, or stock footage from Pixabay. The scenes are cut by rules; you type each scene's visual
+description, prompt and search text, or have a language model on your PC write them (see
+[Write scenes with AI](#write-scenes-with-ai)).
 
 - **Create scenes from script** cuts the narration at sentence ends, then, where a sentence is
   too long, at commas or pauses, so that every scene is **2 to 5 seconds** long (LTX clips fall
@@ -490,9 +495,80 @@ Add all, whether to replace them or only fill the scenes that are empty. A final
 timeline is never added again (its card says **On the timeline**). Each Add is one undo step,
 however many finals it places.
 
+### Write scenes with AI
+
+A language model running on your PC can fill in the scenes for you: for each one it suggests the
+**source** (AI or Stock), a **visual description**, the **stock search text** and the **ComfyUI
+prompt**. Any server with the OpenAI API works; [LM Studio](https://lmstudio.ai/) and
+[Ollama](https://ollama.com/) are the two the app knows best. A small instruction-following model,
+such as Qwen3 8B, is a good place to start.
+
+**Setting it up**
+
+1. **LM Studio**: download a model, then start the server (*Developer* → *Start server*; it listens
+   on `http://127.0.0.1:1234`). **Ollama**: `ollama pull qwen3:8b`; Ollama's server runs on
+   `http://127.0.0.1:11434`.
+2. In `.env`, set the address and the model's name exactly as the server lists it, then restart the app:
+   ```ini
+   LLM_URL=http://127.0.0.1:1234/v1        # Ollama: http://127.0.0.1:11434/v1
+   LLM_MODEL=qwen/qwen3-8b                 # Ollama: qwen3:8b
+   ```
+3. The Scenes tab's **Write with AI** section shows **Language model connected** with the model and
+   the server, or why it isn't (no server, `LLM_MODEL` not set, a model the server doesn't list). If
+   nothing answers at `LLM_URL` but LM Studio or Ollama answers on its usual port, it says so.
+
+**Sharing the GPU with ComfyUI.** The language model and ComfyUI use the same GPU, and running both at
+once can run out of video memory or slow both to a crawl, so they take turns:
+
+- While ComfyUI has anything in its queue (the app's previews and finals, or a job started in ComfyUI
+  itself), **Write scenes with AI** and **Rewrite prompt** wait and say why. The backend checks
+  ComfyUI's queue again just before the model starts.
+- When ComfyUI is idle, it's asked to unload its models first (its `/free` API, what ComfyUI's own
+  *Unload models* button does). A ComfyUI from before 2024 can't be asked; the result says so.
+- After every run, the server is asked to unload the model: LM Studio 0.4 and newer
+  (`/api/v1/models/unload`) and Ollama (`keep_alive: 0`). Other servers (and older LM Studio) keep it
+  loaded, and the app says so.
+- While the model writes, **Generate shot**, previews and finals wait for it, saying why.
+
+**Write scenes with AI** (once there are scenes) sends the script and every scene, with its narration
+and the times of its words, to the model a few scenes at a time (so a long video fits a small
+context window), with the prompt rules from `prompts/ltx_guide.md`. The progress bar follows the
+model's answer as it streams in ("Writing scene 4 of 9…").
+
+- **Structured answers.** The model answers in JSON that follows a schema (servers that can't enforce
+  a schema get plain JSON mode). Every answer is checked: each scene present once, a source of AI or
+  Stock, no empty text. An answer that can't be used is sent back once with what's wrong; if the
+  second one can't be used either, nothing changes and the error shows **what the model wrote** (both
+  answers). An answer cut short because the model ran out of context says how to give it more.
+- **Your edits are kept.** A field counts as yours when it isn't empty and isn't what the AI last wrote
+  there (the app remembers that per field), and a source counts as yours when you picked another
+  one. Those are never overwritten without asking: the model is told you wrote them, and when it has
+  other text for one, a dialog shows yours and its own (**Keep mine** is preselected). Fields you
+  edit while it's writing are treated the same way. Clear a field to let the AI fill it again.
+- **Merging and splitting.** The model may suggest merging a scene with the next or splitting one in
+  two, with a reason. The app only offers a change if every scene it makes is **2 to 5 seconds**
+  long, and a split always cuts where a word starts (by the captions' word times, or the estimate
+  without captions). The dialog lists each one with a tick box (a merge that would replace text you
+  wrote in the second scene starts unticked), and what was left out and why.
+- Closing the dialog keeps the answer: **Review** opens it again. **Discard** throws it away.
+- When there's nothing to ask, the text goes straight in. Either way it's **one undo step**.
+
+**Rewrite prompt** (beside each AI scene's ComfyUI prompt) asks the model for that scene's prompt
+alone, from its narration, its description, the current prompt and what the scenes around it show.
+If the prompt has your own text, it asks first. Undo brings the old prompt back.
+
+**The prompt guide.** `prompts/ltx_guide.md` holds the rules the model writes prompts by. Edit it to
+improve them: it's read at every run, so no restart is needed (comments `<!-- … -->` are notes for
+you and aren't sent). It starts with rules learned from testing LTX-2.5: one flowing paragraph in
+present tense, describing the shot in the order things happen; the shot type, and a still camera
+unless movement matters; an end state, so the clip doesn't drift; one clear action per shot; what
+should be seen rather than negations; materials and shapes named precisely; no words like shatter,
+burst or debris unless that's the action; a short description of the sound; a vertical 9:16
+composition. `LTX_GUIDE` in `.env` points at another file.
+
 ### Saved with the project
 
-Scenes, their times and texts, each preview's seed, prompt and last job state, the chosen
+Scenes, their times and texts (and what the AI last wrote in each field), each preview's seed, prompt and last job state, the chosen
 preview, each final (its preview, refine seed and last job state) and the progress panel are
 saved in `project.json`; the clips themselves stay in the library and the project only
 refers to them by id. The project keeps following the jobs, so a preview or final that finished
@@ -605,7 +681,14 @@ shot is tested against a fake ComfyUI server (its HTTP and websocket API): the w
 on the real `comfy\ltx_t2v_api.json`, submitting variations, queue positions, live progress,
 saving finished shots to the library, failures, cancelling, a lost job, an unreachable ComfyUI
 and picking up jobs again after a restart, plus scene previews: their seeds, saving them with
-their project and scene, Retry rerunning only the failed one, and Clear finished leaving them. The render tests render small projects with real
+their project and scene, Retry rerunning only the failed one, and Clear finished leaving them.
+Write scenes with AI is tested against a fake language model server (answering as LM Studio, Ollama or
+a plain OpenAI-compatible server) and the fake ComfyUI: a valid answer, an invalid answer then a valid
+one, two invalid answers (the raw output comes back), a server error, edited fields kept, merges and
+splits held to the 2 to 5 second rule and cut on word times, long videos sent a few scenes at a time,
+plain JSON mode for servers without schemas, nothing running while ComfyUI has jobs and ComfyUI
+waiting while the model writes, ComfyUI freed first and the model unloaded after, Rewrite prompt, and
+the guide read at every run. The render tests render small projects with real
 FFmpeg and check the MP4: length, size, frame rate (mixed 24/25/30 fps → 30, all 25 → 25),
 codecs, 48 kHz audio and clip audio, faststart, and the picture at chosen frames (the Fill crop,
 Fit inside over a solid and a blurred background, gaps, trims, speed, overlays at exactly their
@@ -617,7 +700,8 @@ ranking change, upgrading older projects (clip links to times), Auto-fill timing
 ComfyUI file-name check, and for scenes: creating and grouping them with and without captions,
 dragged and typed times, split, merge, add and delete, undo and redo of every scene change,
 saving and opening older projects, placing stock footage, and generating, following, choosing,
-retrying and deleting previews). `npm run test:e2e` drives the real frontend in Chromium against a
+retrying and deleting previews, and Write scenes with AI: which fields count as yours, applying the
+answer with your choices, edits made while it writes, merges and splits, and Rewrite prompt). `npm run test:e2e` drives the real frontend in Chromium against a
 fake backend: dragging a clip onto the timeline and playing it, reordering, trimming,
 splitting, the crop control, Pexels and Pixabay results, the source switch, the rate-limit
 countdown, imports with the AI flag, and Generate shot (the dialog, the jobs list across a
@@ -628,7 +712,9 @@ messages, Undo and Redo of ranking edits from the buttons and the keyboard, clip
 them alone, reordering, warnings, the overlay in the preview, saving), scenes (creating them
 with and without captions, asking before replacing them, typed and dragged times with snapping,
 split, merge, add, delete and undo, AI previews with their status lines, choosing, Retry, and
-saving across a reload, the library filter, Find footage on Pixabay), and the render dialog
+saving across a reload, the library filter, Find footage on Pixabay, Write scenes with AI with its
+review dialog, merges, the raw output of a failed answer, Rewrite prompt and the GPU shared with
+ComfyUI), and the render dialog
 (warnings, quality choice, progress, cancel, the finished screen) (on a new machine, first
 run `npx playwright install chromium` once inside the `frontend` folder).
 `npm --prefix frontend run test:render` renders a project for real (the backend, FFmpeg and
@@ -653,6 +739,7 @@ backend/                FastAPI app (Python)
   app/pexels/           Pexels search and downloads
   app/pixabay/          Pixabay search (24-hour cache, rate limit) and downloads
   app/comfy/            Generate shot: the ComfyUI workflow mapping, client and jobs
+  app/llm/              Write scenes with AI: the language model client, the writer, GPU sharing
   app/stock/            what both share: the file choice, orientation, downloads
   app/autofill/         search words per sentence and one clip per sentence
   app/mix/              background music
@@ -669,6 +756,7 @@ frontend/               React + TypeScript + Vite
   e2e/                  end-to-end tests (Playwright, fake backend)
   e2e-render/           the render test with the real backend and FFmpeg
 comfy/                  the ComfyUI workflow for Generate shot (API format)
+prompts/                ltx_guide.md: how the language model writes ComfyUI prompts (edit it)
 scripts/                setup.mjs, dev.mjs, test.mjs (plain Node, no dependencies)
 projects/               your saved projects (not committed)
 library/                the media library shared by all projects (not committed)
@@ -681,6 +769,12 @@ exports/                finished videos, one folder per project (not committed)
 - **"ComfyUI isn't running"** while it is: check the address ComfyUI shows (ComfyUI Desktop:
   Settings → Server Config, port 8000 by default) and set `COMFYUI_URL` in `.env` to match,
   then restart the app.
+- **"Language model isn't running"**: start LM Studio's server (*Developer* → *Start server*) or
+  Ollama, check `LLM_URL` and `LLM_MODEL` in `.env`, restart the app, then click the ↻ next to
+  the status.
+- **"It ran out of room before finishing"**: the model's context is too small for its answer. In
+  LM Studio, raise *Context Length* when loading the model (8192 is plenty); for Ollama, set
+  `OLLAMA_CONTEXT_LENGTH=8192` and restart it.
 
 - **"Python 3.12 or newer was not found"**: install Python (above), open a new terminal,
   run `npm run setup` again.
