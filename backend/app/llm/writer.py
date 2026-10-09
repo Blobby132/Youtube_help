@@ -261,7 +261,7 @@ SCENES_TASK = """You plan the pictures of a vertical YouTube Short (9:16) from i
 - "searchText": two to four words to search Pixabay with: nouns, no punctuation.
 - "prompt": the LTX-2.5 prompt for the shot, following the guide below. Write one for every scene, stock ones too, in case it is switched to AI.
 
-The scenes play one after another in one video: keep the people, places, objects and look consistent from scene to scene. Show what the narration is about; never put text, captions or logos in the picture.
+The scenes play one after another in one video: keep the people, places, objects and look consistent from scene to scene. Each prompt is used on its own, so it never refers to another scene ("the window from scene 1"): describe everything it shows again. Show what the narration is about; never put text, captions or logos in the picture.
 
 Changing the cuts is optional; most scenes need neither:
 - "mergeWithNext": true when this scene and the next one should be a single shot. Then write this scene's fields for the combined scene, and still write the next scene's entry. The combined scene must be 2 to 5 seconds long, and the last scene in the list can't merge.
@@ -273,7 +273,7 @@ Where a field says it was written by the user, keep to it: write the other field
 Answer with one JSON object and nothing else, in this form:
 {"scenes": [{"scene": 1, "source": "ai", "description": "...", "searchText": "...", "prompt": "...", "mergeWithNext": false, "split": [], "why": ""}]}"""
 
-PROMPT_TASK = """You write the text-to-video prompt for one scene of a vertical YouTube Short (9:16), for LTX-2.5 in ComfyUI, following the guide below. Show what the narration is about; never put text, captions or logos in the picture. If the scene has a prompt already, rewrite it to follow the guide, keeping its idea unless it doesn't fit the scene.
+PROMPT_TASK = """You write the text-to-video prompt for one scene of a vertical YouTube Short (9:16), for LTX-2.5 in ComfyUI, following the guide below. The prompt is used on its own, so it never refers to other scenes: describe everything it shows. Show what the narration is about; never put text, captions or logos in the picture. If the scene has a prompt already, rewrite it to follow the guide, keeping its idea unless it doesn't fit the scene.
 
 Answer with one JSON object and nothing else: {"prompt": "..."}"""
 
