@@ -3,6 +3,8 @@
     library/library.json      the index (one entry per item, newest first)
     library/clips/<id>.<ext>  the media files
     library/thumbs/<id>.jpg   small thumbnails
+    library/latents/<id>-<kind>.latent  a scene preview's saved ComfyUI latents (its final
+                              is made from them)
 
 Projects refer to items by id, so a clip downloaded once can be used in any number of videos.
 Everything enters through `Library.add_clip`, whatever made the file (a Pexels download, an
@@ -35,6 +37,7 @@ SOURCES: tuple[str, ...] = get_args(Source)
 INDEX_FILE = "library.json"
 CLIPS_DIR = "clips"
 THUMBS_DIR = "thumbs"
+LATENTS_DIR = "latents"
 INCOMING_DIR = ".incoming"
 MAX_NAME = 120
 # Below this width a clip has to be scaled up to fill the 1080-pixel-wide frame.
@@ -112,6 +115,14 @@ class Library:
             raise AppError(f"The file of library item {item_id} is missing from {path.parent}", 404)
         return path
 
+    def latent_path(self, item_id: str, kind: str) -> Path:
+        """One of the latents saved with a scene preview (kind "video" or "audio")."""
+        name = (self.get(item_id).get("latents") or {}).get(kind)
+        path = self.root / LATENTS_DIR / name if isinstance(name, str) and name else None
+        if path is None or not path.is_file():
+            raise AppError(f"Library item {item_id} has no saved {kind} latent", 404)
+        return path
+
     def thumbnail_path(self, item_id: str) -> Path:
         thumbnail = self.get(item_id).get("thumbnail")
         path = self.root / THUMBS_DIR / thumbnail if thumbnail else None
@@ -169,12 +180,14 @@ class Library:
         source: Source,
         metadata: ClipMetadata,
         on_progress: Callable[[float], None] | None = None,
+        latents: dict[str, Path] | None = None,
     ) -> dict[str, Any]:
         """Adds a video or image file to the library and returns its entry.
 
         The one way into the library, for every source: it reads the file's size, length and
         codecs, converts it if the browser can't play it, makes a thumbnail and records where it
         came from. The file is moved (or converted) into the library, so pass a temporary copy.
+        `latents` (a scene preview's ComfyUI latents, by kind) are moved in with it.
         """
         if source not in SOURCES:
             raise AppError(f"Unknown clip source {source!r}; use one of {', '.join(SOURCES)}.", 400)
@@ -191,6 +204,7 @@ class Library:
                     info = probe(stored)  # converting can change the length by a frame
                 thumbnail = thumbs / f"{item_id}.jpg"
                 make_thumbnail(stored, thumbnail, info)
+                kept = self._keep_latents(item_id, latents or {})
             except BaseException:
                 stored.unlink(missing_ok=True)
                 raise
@@ -200,7 +214,7 @@ class Library:
             message = exc.message.replace(str(file), shown).replace(file.name, shown)
             raise AppError(message, exc.status_code) from exc
 
-        item = entry(item_id, stored, thumbnail.name, info, source, metadata)
+        item = entry(item_id, stored, thumbnail.name, info, source, metadata, kept or None)
         with self._lock:
             self._write([item, *self._read()])
         log.info(
@@ -211,6 +225,21 @@ class Library:
         )
         self.clean_incoming()
         return item
+
+    def _keep_latents(self, item_id: str, latents: dict[str, Path]) -> dict[str, str]:
+        folder = self.root / LATENTS_DIR
+        kept: dict[str, str] = {}
+        try:
+            for kind, path in latents.items():
+                folder.mkdir(parents=True, exist_ok=True)
+                target = folder / f"{item_id}-{kind}.latent"
+                shutil.move(path, target)
+                kept[kind] = target.name
+        except OSError as exc:
+            for name in kept.values():
+                (folder / name).unlink(missing_ok=True)
+            raise AppError(f"Could not keep the preview's latents in the library: {exc}", 500) from exc
+        return kept
 
     def update(self, item_id: str, *, name: str | None = None, ai_generated: bool | None = None) -> dict[str, Any]:
         with self._lock:
@@ -233,7 +262,8 @@ class Library:
             if item is None:
                 raise AppError(f"Library item {item_id!r} was not found. Was it deleted?", 404)
             self._write([i for i in items if i["id"] != item_id])
-        for path in (self.root / CLIPS_DIR / item["file"], self.root / THUMBS_DIR / (item.get("thumbnail") or "")):
+        latents = [self.root / LATENTS_DIR / name for name in (item.get("latents") or {}).values() if isinstance(name, str) and name]
+        for path in (self.root / CLIPS_DIR / item["file"], self.root / THUMBS_DIR / (item.get("thumbnail") or ""), *latents):
             if path.is_file():
                 try:
                     path.unlink()
@@ -262,6 +292,7 @@ def entry(
     info: MediaInfo,
     source: str,
     metadata: ClipMetadata,
+    latents: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The JSON entry for one library item (camelCase, like the project file)."""
     pexels, pixabay = metadata.pexels, metadata.pixabay
@@ -301,4 +332,7 @@ def entry(
             "uploaderUrl": pixabay.uploader_url,
         },
         "generation": metadata.generation,
+        # A scene preview's saved latents (file names in library/latents), which its final is
+        # made from; None for everything else.
+        "latents": latents,
     }

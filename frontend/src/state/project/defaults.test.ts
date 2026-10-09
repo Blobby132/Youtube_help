@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createProject, normalizeProject } from './defaults'
+import { INTERRUPTED } from '../../features/scenes/sceneOps'
 
 describe('normalizeProject', () => {
   it('gives projects saved before Stage 5 filled clips and the ranking style', () => {
@@ -71,6 +72,8 @@ describe('normalizeProject', () => {
       const project = normalizeProject(old)
       expect(project.scenes).toEqual([])
       expect(project.scenePreviews).toEqual([])
+      expect(project.sceneFinals).toEqual([])
+      expect(project.generationRun).toBeNull()
       expect(project.version).toBe(2)
     }
   })
@@ -102,6 +105,28 @@ describe('normalizeProject', () => {
     expect(reopened.scenePreviews).toEqual(saved.scenePreviews)
     // Media stays in the library: the project only refers to it by id.
     expect(JSON.stringify(reopened)).not.toMatch(/\.mp4|\.webm|data:/)
+  })
+
+  it('keeps finals and the progress panel’s run through a save', () => {
+    const saved = createProject()
+    saved.sceneFinals = [
+      { id: 'f1', sceneId: 's1', previewId: 'v2', previewItemId: 'm-g2', jobId: 'g-9', refineSeed: 42, status: 'done', error: null, itemId: 'm-g9', createdAt: '2026-10-08T00:00:00Z' },
+      { id: 'f2', sceneId: 's1', previewId: 'v2', previewItemId: 'm-g2', jobId: 'g-10', refineSeed: 777, status: 'error', error: 'CUDA out of memory', itemId: null, createdAt: '2026-10-08T00:00:00Z' },
+    ]
+    saved.generationRun = {
+      id: 'r-1',
+      steps: [
+        { sceneId: 's1', kind: 'final', recordIds: ['f2'], error: null },
+        { sceneId: 's2', kind: 'previews', recordIds: [], error: 'Write the ComfyUI prompt first: it says what the preview shows.' },
+      ],
+    }
+    const reopened = normalizeProject(JSON.parse(JSON.stringify(saved)))
+    expect(reopened.sceneFinals).toEqual(saved.sceneFinals)
+    expect(reopened.generationRun).toEqual(saved.generationRun)
+
+    // A step saved while it was still being sent says so, and can be retried.
+    saved.generationRun.steps = [{ sceneId: 's3', kind: 'previews', recordIds: [], error: null }]
+    expect(normalizeProject(JSON.parse(JSON.stringify(saved))).generationRun!.steps[0].error).toBe(INTERRUPTED)
   })
 
   it('keeps "Fit inside" and the canvas settings', () => {

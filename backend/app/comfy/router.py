@@ -38,6 +38,15 @@ class ShotRequest(BaseModel):
     scene: SceneRef | None = None
 
 
+class FinalRequest(BaseModel):
+    """A scene's final, made from one of its previews (its library clip)."""
+
+    previewItemId: str = Field(min_length=1, max_length=64)
+    scene: SceneRef
+    # The refine pass's seed; left out: the workflow's own. "Regenerate final" sends a new one.
+    seed: int | None = Field(default=None, ge=1, le=MAX_SEED)
+
+
 @router.get("/status")
 def status(service: ServiceDep) -> dict[str, Any]:
     """Whether ComfyUI answers (checked now) and the workflow file can be used."""
@@ -55,6 +64,13 @@ def generate(body: ShotRequest, service: ServiceDep) -> dict[str, Any]:
     scene = body.scene.model_dump() if body.scene else None
     jobs = service.generate(body.prompt, body.duration, body.quality, body.variations, body.seed, body.basedOn, scene)
     return {"jobs": jobs}
+
+
+@router.post("/finals")
+def generate_final(body: FinalRequest, service: ServiceDep) -> dict[str, Any]:
+    """Queues a scene's final from the chosen preview: only the upscale and refine passes run, on
+    the preview's own saved first pass, so the final matches it. Tracked like any shot."""
+    return {"job": service.generate_final(body.previewItemId, body.scene.model_dump(), body.seed)}
 
 
 @router.post("/shots/{job_id}/cancel")

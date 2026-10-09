@@ -6,8 +6,11 @@ the result from /history. A finished video is downloaded and added through Libra
 (source "ai", AI-generated). Jobs are kept in data/generations.json, so they survive a page
 reload and a backend restart (tracking resumes where it left off).
 
-Scene previews (the Scenes tab) are ordinary jobs with a `scene` (project and scene id): the
-same queue, progress and library, plus those ids and type "preview" in the clip's metadata.
+Scene previews and finals (the Scenes tab) are jobs with a `scene` (project and scene id): the
+same queue, progress and library, plus those ids and type "preview" or "final" in the clip's
+metadata. A preview runs only the workflow's first pass (at the Final size) and keeps its
+latents with the clip; its final loads them and runs only the upscale and refine passes, so the
+final is that preview, sharper, not a new video (see workflow.py).
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.comfy import workflow as wf
-from app.comfy.client import ComfyClient, ComfyUnreachable, failure_reason, output_files
+from app.comfy.client import ComfyClient, ComfyUnreachable, failure_reason, node_files, node_text, output_files
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.core.files import atomic_write_text
@@ -35,6 +38,14 @@ log = logging.getLogger("shorts.comfy")
 
 Quality = Literal["draft", "final"]
 QUALITY_MEGAPIXELS: dict[str, float] = {"draft": 0.4, "final": 0.8}
+# Scene previews are the first pass of a Final-quality shot (half its width and height), so
+# their finals come out at the Final size.
+SCENE_MEGAPIXELS = QUALITY_MEGAPIXELS["final"]
+LATENT_KINDS = ("video", "audio")
+OLD_PREVIEW = (
+    "This preview was made before finals could match their previews (it has no saved first pass), "
+    "so a final made from it would be a different video. Generate a new preview for this scene and use that one."
+)
 MIN_SECONDS, MAX_SECONDS = 2, 5
 MAX_VARIATIONS = 4
 # Seeds stay below 2**53 so the browser can show and send them back exactly.
@@ -58,6 +69,8 @@ STAGES: dict[str, tuple[float, str]] = {
     "CLIPLoader": (3, "Loading the text model"),
     "CreateVideo": (1, "Assembling the video"),
     "SaveVideo": (2, "Saving the video"),
+    "SaveLatent": (1, "Saving the preview's latents"),
+    "LoadLatent": (1, "Loading the preview"),
 }
 OTHER_WEIGHT = 0.2
 
@@ -174,12 +187,13 @@ class GenerationService:
 
     def status(self) -> dict[str, Any]:
         """Whether ComfyUI answers and the workflow file can be used."""
+        finals = None
         try:
-            wf.load(self.workflow_path)
+            finals = wf.finals_problem(wf.load(self.workflow_path))
             problem = None
         except AppError as exc:
             problem = exc.message
-        return {**self.client.status(), "workflow": self.workflow_path.name, "workflowProblem": problem}
+        return {**self.client.status(), "workflow": self.workflow_path.name, "workflowProblem": problem, "finalsProblem": finals}
 
     # Jobs ----------------------------------------------------------------------------------------
 
@@ -198,7 +212,8 @@ class GenerationService:
         scene: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Queues `variations` shots in ComfyUI, each with its own random seed (or `seed`).
-        With `scene` ({"projectId", "sceneId"}) they're previews for that scene."""
+        With `scene` ({"projectId", "sceneId"}) they're previews for that scene: only the first
+        pass of a Final-quality shot, with its latents kept for the final."""
         prompt = prompt.strip()
         scene = scene_ref(scene)
         if not prompt:
@@ -210,18 +225,23 @@ class GenerationService:
         if not 1 <= variations <= MAX_VARIATIONS:
             raise AppError(f"Make 1 to {MAX_VARIATIONS} variations at a time.", 400)
         workflow = wf.load(self.workflow_path)
-        status = self.client.status()
-        if not status["reachable"]:
-            raise AppError(status["error"], 503)
+        if scene:
+            wf.find_passes(workflow)  # says why finals couldn't match previews made with it
+        self._check_reachable()
 
         batch = f"b-{secrets.token_hex(4)}"
         created = []
         for variation in range(1, variations + 1):
             shot_seed = seed if seed is not None and variations == 1 else secrets.randbelow(MAX_SEED - 1) + 1
-            megapixels = QUALITY_MEGAPIXELS[quality]
+            megapixels = SCENE_MEGAPIXELS if scene else QUALITY_MEGAPIXELS[quality]
+            job_id = f"g-{secrets.token_hex(5)}"
             filled = wf.apply(workflow, prompt=prompt, seed=shot_seed, megapixels=megapixels, duration=duration)
+            nodes = None
+            if scene:
+                filled, nodes = wf.preview_workflow(filled, f"latents/shorts_{job_id}")
             job: dict[str, Any] = {
-                "id": f"g-{secrets.token_hex(5)}",
+                "id": job_id,
+                "kind": "preview" if scene else "shot",
                 "batch": batch,
                 "variation": variation,
                 "variations": variations,
@@ -234,6 +254,8 @@ class GenerationService:
                 "workflow": self.workflow_path.name,
                 "basedOn": based_on,
                 "scene": scene,
+                # The nodes added to a preview's workflow, whose results are saved with it.
+                "nodes": nodes,
                 "promptId": None,
                 "status": "queued",
                 "queuePosition": None,
@@ -247,21 +269,100 @@ class GenerationService:
                 "finishedAt": None,
             }
             try:
-                job["promptId"] = self.client.submit(filled, self.client_id)
-                job["message"] = "Waiting in ComfyUI's queue…"
+                self._submit(job, filled)
             except AppError as exc:
                 if not created:
                     raise  # nothing queued yet: the request fails with the reason
                 job.update(status="error", error=exc.message, message="", finishedAt=utc_now())
-            self._progress[job["id"]] = Progress({n: node["class_type"] for n, node in filled.items()})
-            with self._lock:
-                self.jobs[job["id"]] = job
+                with self._lock:
+                    self.jobs[job["id"]] = job
             created.append(job)
-            log.info("Queued shot %s (%d/%d, seed %d, %s) as ComfyUI prompt %s", job["id"], variation, variations, shot_seed, quality, job["promptId"])
+            log.info("Queued %s %s (%d/%d, seed %d, %s) as ComfyUI prompt %s", job["kind"], job["id"], variation, variations, shot_seed, quality, job["promptId"])
         self._save()
         self.start()
         self._wake.set()
         return [dict(j) for j in created]
+
+    def generate_final(self, preview_item_id: str, scene: dict[str, Any], seed: int | None = None) -> dict[str, Any]:
+        """Queues a scene's final, made from one of its previews (a library clip): the preview's
+        saved latents go to ComfyUI and only the upscale and refine passes run, so the final is
+        that preview at the Final size. `seed` is the refine pass's (None: the workflow's own)."""
+        scene = scene_ref(scene)
+        assert scene is not None
+        preview = self.library.get(preview_item_id)
+        generation = preview.get("generation") or {}
+        if generation.get("type") != "preview":
+            raise AppError("Finals are made from a scene's previews; that clip isn't one.", 400)
+        try:
+            latents = {kind: self.library.latent_path(preview_item_id, kind) for kind in LATENT_KINDS}
+        except AppError as exc:
+            raise AppError(OLD_PREVIEW, 409) from exc
+        workflow = wf.load(self.workflow_path)
+        wf.find_passes(workflow)
+        self._check_reachable()
+        names = {kind: self.client.upload(path, f"shorts_{preview_item_id}_{kind}.latent") for kind, path in latents.items()}
+        prompt = str(generation.get("prompt") or "")
+        duration = int(generation.get("duration") or MIN_SECONDS)
+        megapixels = float(generation.get("megapixels") or SCENE_MEGAPIXELS)
+        filled = wf.apply(workflow, prompt=prompt, seed=int(generation.get("seed") or 1), megapixels=megapixels, duration=duration)
+        refine_seed = seed if seed is not None else wf.refine_seed(filled)
+        final = wf.final_workflow(
+            filled,
+            video_latent=names["video"],
+            audio_latent=names["audio"],
+            prompt_text=generation.get("promptText"),
+            seed=seed,
+        )
+        job: dict[str, Any] = {
+            "id": f"g-{secrets.token_hex(5)}",
+            "kind": "final",
+            "batch": f"b-{secrets.token_hex(4)}",
+            "variation": 1,
+            "variations": 1,
+            "prompt": prompt,
+            "seed": generation.get("seed"),
+            "refineSeed": refine_seed,
+            "quality": "final",
+            "megapixels": megapixels,
+            "duration": duration,
+            "fps": wf.FPS,
+            "workflow": self.workflow_path.name,
+            "basedOn": preview_item_id,
+            "scene": scene,
+            "previewItemId": preview_item_id,
+            "previewShotId": generation.get("shotId"),
+            "nodes": None,
+            "promptId": None,
+            "status": "queued",
+            "queuePosition": None,
+            "progress": 0.0,
+            "message": "Sending to ComfyUI…",
+            "itemId": None,
+            "error": None,
+            "cancelRequested": False,
+            "createdAt": utc_now(),
+            "startedAt": None,
+            "finishedAt": None,
+        }
+        self._submit(job, final)
+        log.info("Queued the final %s of preview %s (refine seed %s) as ComfyUI prompt %s", job["id"], preview_item_id, refine_seed, job["promptId"])
+        self._save()
+        self.start()
+        self._wake.set()
+        return dict(job)
+
+    def _check_reachable(self) -> None:
+        status = self.client.status()
+        if not status["reachable"]:
+            raise AppError(status["error"], 503)
+
+    def _submit(self, job: dict[str, Any], workflow: wf.Workflow) -> None:
+        """Sends a job's workflow to ComfyUI's queue and starts following it (raises if refused)."""
+        job["promptId"] = self.client.submit(workflow, self.client_id)
+        job["message"] = "Waiting in ComfyUI's queue…"
+        self._progress[job["id"]] = Progress({n: node["class_type"] for n, node in workflow.items()})
+        with self._lock:
+            self.jobs[job["id"]] = job
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         job = self._get(job_id)
@@ -359,22 +460,25 @@ class GenerationService:
             prompt_id = job["promptId"]
             if job["status"] == "saving":
                 self._finish(job)
-            elif prompt_id in running:
+            elif prompt_id in running or prompt_id in pending:
                 self._lost_since.pop(job["id"], None)
-                changes: dict[str, Any] = {"queuePosition": 0}
-                if job["status"] != "running":
-                    changes.update(status="running", startedAt=job["startedAt"] or utc_now(), message="Starting…")
-                self._set(job, persist=job["status"] != "running", **changes)
-            elif prompt_id in pending:
-                self._lost_since.pop(job["id"], None)
-                ahead = len(running) + pending.index(prompt_id)
-                self._set(
-                    job,
-                    persist=False,
-                    status="queued",
-                    queuePosition=ahead,
-                    message=f"Waiting in ComfyUI's queue ({ahead} ahead)" if ahead else "Next in ComfyUI's queue",
-                )
+                with self._lock:
+                    if job["status"] not in ACTIVE:
+                        continue  # cancelled since the queue was read
+                    if prompt_id in running:
+                        changes: dict[str, Any] = {"queuePosition": 0}
+                        if job["status"] != "running":
+                            changes.update(status="running", startedAt=job["startedAt"] or utc_now(), message="Starting…")
+                        self._set(job, persist=job["status"] != "running", **changes)
+                    else:
+                        ahead = len(running) + pending.index(prompt_id)
+                        self._set(
+                            job,
+                            persist=False,
+                            status="queued",
+                            queuePosition=ahead,
+                            message=f"Waiting in ComfyUI's queue ({ahead} ahead)" if ahead else "Next in ComfyUI's queue",
+                        )
             else:
                 self._check_history(job)
 
@@ -416,8 +520,18 @@ class GenerationService:
                 raise AppError("ComfyUI finished but saved no video. Check the Save Video node in the workflow.", 502)
             file = files[0]
             temp = self.library.incoming_dir / f"comfy-{job['id']}{Path(file['filename']).suffix or '.mp4'}"
+            latents = {kind: self.library.incoming_dir / f"comfy-{job['id']}-{kind}.latent" for kind in LATENT_KINDS} if job.get("nodes") else {}
             try:
                 self.client.download(file, temp, lambda p: self._set(job, persist=False, progress=0.96 + 0.02 * p))
+                for kind, target in latents.items():
+                    saved = node_files(entry, job["nodes"][f"{kind}Latent"], ".latent")
+                    if not saved:
+                        raise AppError(
+                            f"ComfyUI made the preview but didn't save its {kind} latent, so no final could match it. "
+                            "Check that ComfyUI has the SaveLatent node, then retry.",
+                            502,
+                        )
+                    self.client.download(saved[0], target)
                 info = probe(temp)
                 generation = {
                     "prompt": job["prompt"],
@@ -433,18 +547,35 @@ class GenerationService:
                     "basedOn": job.get("basedOn"),
                     "generatedAt": utc_now(),
                 }
-                if job.get("scene"):
+                if job.get("kind") == "final":
+                    # A scene final: its scene, and the preview (and that preview's job) it's made from.
+                    generation.update(
+                        type="final",
+                        **job["scene"],
+                        shotId=job["id"],
+                        previewItemId=job["previewItemId"],
+                        previewShotId=job.get("previewShotId"),
+                        refineSeed=job.get("refineSeed"),
+                    )
+                elif job.get("scene"):
                     # A scene preview: which project and scene it's for, and the job that made it.
                     generation.update(type="preview", **job["scene"], shotId=job["id"])
+                    text = node_text(entry, job["nodes"]["promptText"]) if (job.get("nodes") or {}).get("promptText") else None
+                    if text is not None:
+                        # The exact text the prompt became (the enhancer may rewrite it): its final reads the same.
+                        generation["promptText"] = text
+                name = shot_name(job["prompt"], job["variation"], job["variations"])
                 metadata = ClipMetadata(
-                    name=shot_name(job["prompt"], job["variation"], job["variations"]),
+                    name=f"Final: {name}" if job.get("kind") == "final" else name,
                     ai_generated=True,
                     original_name=file["filename"],
                     generation=generation,
                 )
-                item = self.library.add_clip(temp, "ai", metadata)
+                item = self.library.add_clip(temp, "ai", metadata, latents=latents or None)
             finally:
                 temp.unlink(missing_ok=True)
+                for path in latents.values():
+                    path.unlink(missing_ok=True)
         except ComfyUnreachable:
             self._set(job, persist=False, message="ComfyUI isn't answering. Open ComfyUI Desktop to save the shot.")
             return
@@ -478,11 +609,7 @@ class GenerationService:
             return
         progress = self._progress.get(job["id"])
         if progress is None:
-            try:
-                classes = {n: node["class_type"] for n, node in wf.load(self.workflow_path).items()}
-            except AppError:
-                classes = {}
-            progress = self._progress[job["id"]] = Progress(classes)
+            progress = self._progress[job["id"]] = Progress(self._classes(job))
         if kind == "execution_start":
             self._set(job, status="running", queuePosition=0, startedAt=job["startedAt"] or utc_now(), message="Starting…")
             return
@@ -499,6 +626,18 @@ class GenerationService:
             return
         message = "Cancelling…" if job.get("cancelRequested") else progress.message()
         self._set(job, persist=False, status="running", queuePosition=0, progress=round(progress.fraction(), 4), message=message)
+
+    def _classes(self, job: dict[str, Any]) -> dict[str, str]:
+        """The node types of the workflow a job ran (after a restart, rebuilt from the file)."""
+        try:
+            workflow = wf.load(self.workflow_path)
+            if job.get("kind") == "final":
+                workflow = wf.final_workflow(workflow, video_latent="", audio_latent="")
+            elif job.get("nodes"):
+                workflow = wf.preview_workflow(workflow, "")[0]
+        except AppError:
+            return {}
+        return {n: node["class_type"] for n, node in workflow.items()}
 
 
 @lru_cache

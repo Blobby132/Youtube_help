@@ -11,15 +11,10 @@ import { generateBlocker, useGenerate } from '../generate/generateStore'
 import { useLibrary } from '../library/libraryStore'
 import { selectPreview, setPreviewCount, updateScene } from './sceneEdits'
 import { MAX_PREVIEWS, MIN_PREVIEWS, previewSeconds, previewsOf } from './sceneOps'
-import {
-  cancelPreview,
-  deletePreview,
-  generatePreviews,
-  isPreviewActive,
-  PREVIEW_STATUS_LABEL,
-  previewStatusLine,
-  retryPreview,
-} from './scenePreviews'
+import { SceneFinalBlock } from './SceneFinal'
+import { isOldPreview } from './sceneFinals'
+import { cancelPreview, deletePreview, isPreviewActive, PREVIEW_STATUS_LABEL, previewStatusLine, retryPreview } from './scenePreviews'
+import { generateScenePreviews } from './sceneRun'
 import styles from './Scenes.module.css'
 
 const COUNTS = Array.from({ length: MAX_PREVIEWS - MIN_PREVIEWS + 1 }, (_, i) => {
@@ -35,7 +30,7 @@ function useJobs(): Map<string, ShotJob> {
   return useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs])
 }
 
-/** An AI scene: its ComfyUI prompt, and its Draft previews to choose from. */
+/** An AI scene: its ComfyUI prompt, its Draft previews to choose from, and its final. */
 export function SceneAiShots({ scene, number }: { scene: Scene; number: number }) {
   const all = useProject((p) => p.scenePreviews)
   const previews = useMemo(() => previewsOf(all, scene.id), [all, scene.id])
@@ -53,7 +48,7 @@ export function SceneAiShots({ scene, number }: { scene: Scene; number: number }
     setBusy(true)
     setError(null)
     try {
-      await generatePreviews(scene.id)
+      await generateScenePreviews(scene.id)
     } catch (failure) {
       setError(message(failure))
     } finally {
@@ -91,7 +86,8 @@ export function SceneAiShots({ scene, number }: { scene: Scene; number: number }
         Generate previews
       </Button>
       <p className={styles.note}>
-        Draft quality, {previewSeconds(scene)} s each, every one with its own seed. More previews are added to these.
+        {previewSeconds(scene)} s each, every one with its own seed, at half the final’s size: each is the first pass of its final, so
+        the final matches it. More previews are added to these.
         {blocker && status && ` ${blocker}`}
       </p>
       {error && (
@@ -130,6 +126,8 @@ export function SceneAiShots({ scene, number }: { scene: Scene; number: number }
           ))}
         </ul>
       )}
+
+      <SceneFinalBlock scene={scene} number={number} previews={previews} jobs={jobs} />
     </>
   )
 }
@@ -180,6 +178,11 @@ export function PreviewRow({ preview, name, job, chosen = false, onUse }: Previe
         </div>
         {status === 'error' && failure && <p className={styles.previewError}>{failure}</p>}
         {status === 'done' && !item && libraryReady && <p className={styles.previewError}>Its clip is no longer in the library.</p>}
+        {status === 'done' && isOldPreview(item) && (
+          <p className={styles.previewOld} data-testid="old-preview">
+            Made before finals could match previews: a final made from it would be a different video.
+          </p>
+        )}
         {error && (
           <p className={styles.previewError} role="alert">
             {error}

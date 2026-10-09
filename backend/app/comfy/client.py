@@ -165,6 +165,26 @@ class ComfyClient:
         url = f"{self.url}/view?{httpx.QueryParams(params)}"
         download_file(httpx.Client(transport=self.transport, timeout=DOWNLOAD_TIMEOUT), url, target, "ComfyUI", on_progress)
 
+    def upload(self, path: Path, name: str) -> str:
+        """Puts a file in ComfyUI's input folder (replacing one with that name), where loader
+        nodes such as LoadLatent find it. Returns the name to give those nodes."""
+        try:
+            content = path.read_bytes()
+        except OSError as exc:
+            raise AppError(f"Can't read {path.name} to send it to ComfyUI: {exc}", 500) from exc
+        response = self._request(
+            "POST",
+            "/upload/image",
+            DOWNLOAD_TIMEOUT,
+            files={"image": (name, content, "application/octet-stream")},
+            data={"type": "input", "overwrite": "true"},
+        )
+        data = self._json(response, f"take the file {name}")
+        if not isinstance(data, dict) or not data.get("name"):
+            raise AppError(f"ComfyUI didn't say where it saved {name}.", 502)
+        subfolder = str(data.get("subfolder") or "").strip("/")
+        return f"{subfolder}/{data['name']}" if subfolder else str(data["name"])
+
     def events(self, client_id: str, stop: Callable[[], bool]) -> Iterator[dict[str, Any]]:
         """ComfyUI's progress messages for jobs queued with `client_id`, until `stop()` is true
         or the connection drops (raises OSError then)."""
@@ -201,6 +221,24 @@ def output_files(history: dict[str, Any], preferred_node: str | None) -> list[di
                 if isinstance(file, dict) and str(file.get("filename", "")).lower().endswith(VIDEO_EXTENSIONS):
                     files.append(file)
     return files
+
+
+def node_files(history: dict[str, Any], node_id: str, extension: str) -> list[dict[str, Any]]:
+    """The files one node of a finished job saved with that extension (e.g. SaveLatent's .latent)."""
+    files = []
+    for value in ((history.get("outputs") or {}).get(node_id) or {}).values():
+        for file in value if isinstance(value, list) else []:
+            if isinstance(file, dict) and str(file.get("filename", "")).lower().endswith(extension):
+                files.append(file)
+    return files
+
+
+def node_text(history: dict[str, Any], node_id: str) -> str | None:
+    """The text a node such as Preview as Text showed, or None."""
+    texts = ((history.get("outputs") or {}).get(node_id) or {}).get("text")
+    if isinstance(texts, list) and texts and isinstance(texts[0], str):
+        return texts[0]
+    return None
 
 
 def failure_reason(history: dict[str, Any]) -> tuple[str, bool]:

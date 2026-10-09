@@ -119,6 +119,9 @@ export interface LibraryItem {
   pixabay: { videoId: number; url: string; uploader: string; uploaderUrl: string | null } | null
   /** For AI shots: how it was made. */
   generation: AiGeneration | null
+  /** A scene preview's saved first pass (its final is made from it); missing on previews made
+   * before finals could match them, and on everything else. */
+  latents?: { video: string; audio: string } | null
 }
 
 export type ShotQuality = 'draft' | 'final'
@@ -135,11 +138,25 @@ export interface AiGeneration {
   workflow: string
   basedOn: string | null
   generatedAt: string
-  /** Set on a scene's preview (the Scenes tab): which project and scene, and the job that made it. */
-  type?: 'preview'
+  /** Set on a scene's preview or final (the Scenes tab): which project and scene, and the job that made it. */
+  type?: 'preview' | 'final'
   projectId?: string
   sceneId?: string
   shotId?: string
+  /** A preview: the exact text its prompt became (its final reads the same). */
+  promptText?: string
+  /** A final: the preview it was made from (its library clip and job) and the refine pass's seed. */
+  previewItemId?: string
+  previewShotId?: string | null
+  refineSeed?: number | null
+}
+
+/** A scene's final, made from one of its previews. */
+export interface FinalRequest {
+  previewItemId: string
+  scene: SceneRef
+  /** The refine pass's seed; left out: the workflow's own. */
+  seed?: number
 }
 
 /** The project and scene a preview is made for. */
@@ -158,6 +175,8 @@ export interface ComfyStatus {
   workflow: string
   /** What's wrong with the workflow file, if anything. */
   workflowProblem: string | null
+  /** Why finals couldn't match their previews with this workflow (null when they can). */
+  finalsProblem?: string | null
 }
 
 export type ShotStatus = 'queued' | 'running' | 'saving' | 'done' | 'error' | 'cancelled'
@@ -176,8 +195,13 @@ export interface ShotJob {
   fps: number
   workflow: string
   basedOn: string | null
-  /** Set for a scene's previews; the Scenes tab shows those, not the Shots list. */
+  /** 'preview' and 'final' are a scene's (the Scenes tab shows those, not the Shots list). */
+  kind?: 'shot' | 'preview' | 'final'
+  /** Set for a scene's previews and finals. */
   scene?: SceneRef | null
+  /** A final: the preview clip it's made from, and the refine pass's seed. */
+  previewItemId?: string
+  refineSeed?: number | null
   status: ShotStatus
   /** Jobs ahead of this one in ComfyUI's queue (0 when it's running). */
   queuePosition: number | null
@@ -362,6 +386,7 @@ export const api = {
   dismissShot: (jobId: string) =>
     request<{ deleted: string }>(`/api/comfy/shots/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
   clearShots: () => request<{ jobs: ShotJob[] }>('/api/comfy/shots/clear', json('POST', {})),
+  generateFinal: (final: FinalRequest) => request<{ job: ShotJob }>('/api/comfy/finals', json('POST', final)),
   renderCheck: (project: Project) => request<RenderCheck>('/api/render/check', json('POST', { project })),
   startRender: (
     body: { project: Project; quality: RenderQuality['id']; fps: { num: number; den: number }; frames: number },

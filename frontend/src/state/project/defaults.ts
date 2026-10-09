@@ -1,6 +1,6 @@
 import { newId } from '../../lib/ids'
 import { timesFromClipLinks } from '../../features/ranking/rankEntries'
-import { normalizePreviews, normalizeScenes } from '../../features/scenes/sceneOps'
+import { normalizeFinals, normalizePreviews, normalizeRun, normalizeScenes } from '../../features/scenes/sceneOps'
 import { PROJECT_VERSION, type Project, type RankEntry, type TimeRange, type TimelineClip } from './types'
 
 export const DEFAULT_VOICE_ID = 'af_heart'
@@ -57,6 +57,8 @@ export function createProject(name = 'Untitled short'): Project {
     },
     scenes: [],
     scenePreviews: [],
+    sceneFinals: [],
+    generationRun: null,
   }
 }
 
@@ -113,6 +115,8 @@ export function normalizeProject(raw: unknown): Project {
   // their own: a project without them simply has none.
   project.scenes = normalizeScenes(raw.scenes)
   project.scenePreviews = normalizePreviews(raw.scenePreviews)
+  project.sceneFinals = normalizeFinals(raw.sceneFinals)
+  project.generationRun = normalizeRun(raw.generationRun)
   project.version = PROJECT_VERSION
   return project
 }

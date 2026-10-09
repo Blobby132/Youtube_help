@@ -21,7 +21,8 @@ The app is built in stages. Each stage is tested before the next one starts.
 | 4 | Media tab (Pexels and uploads) and timeline | ✅ done |
 | 5 | Canvas & title, Ranking tab | ✅ done |
 | 6 | FFmpeg render | ✅ done |
-| 7 | AI Scenes, part A: scenes from the script, stock footage and AI previews per scene | 🧪 ready to test |
+| 7 | AI Scenes, part A: scenes from the script, stock footage and AI previews per scene | ✅ done |
+| 7 | AI Scenes, part B: finals made from the chosen preview, all scenes at once, finals on the timeline | 🧪 ready to test |
 
 Working now: the full layout, autosaved projects, the script box, all three ways to make a
 voiceover (AI read, recording, upload) plus background music, word-timed captions, a media
@@ -29,7 +30,8 @@ library shared by all projects (Pixabay and Pexels search, your own clips and im
 Generate shot), a timeline whose clips, voiceover and captions play together in the preview,
 clips that fill the frame or fit inside it over a blurred or solid background, a title,
 ranking overlays for countdown videos, scenes (the video cut into 2 to 5 second stretches, each
-with stock footage or AI previews to choose from), and the final render to a Shorts-ready MP4.
+with stock footage, or AI previews to choose from and a final made from the chosen one), and the
+final render to a Shorts-ready MP4.
 
 ## Windows setup
 
@@ -288,9 +290,11 @@ card shows the prompt, with:
 
 The clip also stores its seed, quality, resolution, length and the workflow file it came from.
 
-The Scenes tab's **previews** are made by these same jobs (see [Scenes](#scenes)). They aren't in
-the Shots list (the Scenes tab shows them, and **Clear finished** leaves them alone), and the
-library hides them unless you tick **Scene previews** above it.
+The Scenes tab's **previews** and **finals** are made by these same jobs (see [Scenes](#scenes)).
+They aren't in the Shots list (the Scenes tab shows them, and **Clear finished** leaves them
+alone). The library hides previews unless you tick **Scene previews** above it; finals are listed
+like any clip. A scene preview's card doesn't offer **Final quality**: its final is made in the
+Scenes tab, from the preview itself.
 
 **The workflow.** `comfy\ltx_t2v_api.json` is the LTX-2.5 text-to-video workflow exported
 from ComfyUI with *Workflow → Export (API)*. The app changes only these inputs, listed in one
@@ -309,6 +313,26 @@ To use a changed workflow, export it the same way over `comfy\ltx_t2v_api.json` 
 `COMFYUI_WORKFLOW` in `.env` at another file). If one of those inputs can't be found, the Media
 tab names what's missing; if ComfyUI rejects the workflow (for example a model file that isn't
 installed), it shows ComfyUI's reason.
+
+**Scene previews and finals** are made from the same workflow file, rewired by the app (nothing
+else to export). LTX-2.5 samples twice: a first pass at half the size, then the
+`LTXVLatentUpsampler` doubles that latent and a refine pass sharpens it. So:
+
+- a **preview** runs only the first pass of a Final-quality (0.8 megapixel) shot, decodes it with
+  the workflow's own decoders, and saves its video and audio latents with two added `SaveLatent`
+  nodes (plus a *Preview as Text* of the exact prompt text, in case the prompt enhancer rewrote it).
+  The app downloads the latents and keeps them with the preview's clip in the library
+  (`library\latents`);
+- its **final** sends those latents to ComfyUI's input folder (the same upload ComfyUI's own image
+  loader uses), puts two `LoadLatent` nodes in place of the first pass, and runs only the upscale
+  and refine passes, reading the same prompt text.
+
+So a final is exactly what the whole workflow would have made from that preview's first pass, at
+twice its width and height, not a new video. The refine pass keeps the workflow's own seed; only
+**Regenerate final** gives it a new one. The two passes are found by how the nodes are connected
+(a `SamplerCustomAdvanced` starting from *Empty LTXV Latent Video*, then *Separate AV Latent*,
+the upsampler, the refine sampler and its *Separate AV Latent*); a workflow without them still
+makes ordinary shots, and the Scenes tab says why finals couldn't match previews made with it.
 
 ### Auto-fill
 
@@ -411,9 +435,11 @@ it off again.
 ### AI scenes
 
 - **Previews** (1 to 4, 2 by default) is how many **Generate previews** makes. They're Generate
-  shot jobs at **Draft** quality, each with its own random seed, as long as the scene rounded up to
-  whole seconds (2 to 5). Generating again adds more; previews are only removed when you delete
-  them (the trash button, which also deletes the clip from the library).
+  shot jobs, each with its own random seed, as long as the scene rounded up to whole seconds (2 to
+  5). Each is the first pass of its final, at half the final's width and height (about 320×608),
+  so its final matches it (see [the workflow](#generate-shot-ai-clips-with-comfyui)). Generating
+  again adds more; previews are only removed when you delete them (the trash button, which also
+  deletes the clip and its saved first pass from the library).
 - Each scene lists its previews with their seed and state: **Queued**, **Generating** (with the
   job's real progress), **Completed**, **Failed** or **Cancelled**, and a status line per running
   preview, e.g. "Scene 3: preview 2 of 2, seed 123456, 62%", with ComfyUI's own step message under
@@ -427,12 +453,50 @@ it off again.
 - Undoing, deleting, merging or recreating scenes never removes a preview: a preview whose scene
   is gone is listed under **Previews from removed scenes** (Undo brings the scene back with them).
 
+**Finals.** Once a scene has a chosen preview, **Generate final** makes its final from that
+preview itself (its first pass, upscaled and refined), so it's the same shot at the Final size,
+about 640×1216. Afterwards the button is **Regenerate final**: the chosen preview again (another
+one, if you've changed your choice; the card says when the final is from a different preview)
+with a new refine seed, for the same shot with small differences in detail. Neither changes any
+other scene. The final shows its state and progress like a preview; a failed one shows ComfyUI's
+error and **Retry** (the same preview and refine seed). Earlier finals stay in the library.
+Finals are saved through `Library.add_clip` with source `ai`, AI-generated, and type `final`, the
+project and scene ids, the preview they came from (`previewItemId`, `previewShotId`) and the refine
+seed in the clip's `generation` metadata.
+
+Previews made before this (part A) have no saved first pass, so a final made from one would be a
+different video. Such a preview says so, and when it's the chosen one, the scene says so and
+**Generate final** stays off: generate new previews and choose one of those.
+
+**All scenes at once.** The **AI scenes** section above the scene list has:
+
+- **Generate all previews**: previews for every AI scene that has none (a scene without a prompt
+  shows that instead, with Retry).
+- **Generate all finals**, available once every AI scene has a chosen preview: a final for each
+  scene that has none from its chosen preview (scenes whose final is made or being made are left
+  alone). Neither button chooses a preview for you.
+- A **progress panel** listing each scene with its state (queued and how many are ahead,
+  generating with its percentage, completed, failed) and a **total** percentage over every job.
+  A scene that fails shows its error and a **Retry** for that scene only; the others keep going.
+  A scene's own Generate previews or Generate final joins the panel while it's running; once
+  everything has finished, **Close** clears it. All the jobs go through the same Generate shot jobs
+  and ComfyUI's queue, which makes them one at a time.
+
+**On the timeline.** A finished final has **Add to timeline**, and **Add all to timeline** adds
+every finished final that isn't on the timeline yet. Each goes over exactly its scene's start and
+end, in place of what's there (as stock footage does; a final shorter than its scene plays slower).
+If clips are already in a scene's time, it asks first: for one scene, whether to replace them; for
+Add all, whether to replace them or only fill the scenes that are empty. A final already on the
+timeline is never added again (its card says **On the timeline**). Each Add is one undo step,
+however many finals it places.
+
 ### Saved with the project
 
-Scenes, their times and texts, each preview's seed, prompt and last job state, and the chosen
-preview are saved in `project.json`; the clips themselves stay in the library and the project only
-refers to them by id. The project keeps following the jobs, so a preview that finished while the
-app was closed shows up when you open it again (found by its job id in the library if the jobs
+Scenes, their times and texts, each preview's seed, prompt and last job state, the chosen
+preview, each final (its preview, refine seed and last job state) and the progress panel are
+saved in `project.json`; the clips themselves stay in the library and the project only
+refers to them by id. The project keeps following the jobs, so a preview or final that finished
+while the app was closed shows up when you open it again (found by its job id in the library if the jobs
 list no longer has it). Projects saved before scenes open with no scenes; nothing else changes,
 so the project version stays the same.
 

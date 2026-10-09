@@ -45,7 +45,12 @@ export interface FakeLibraryItem {
   pexels: { videoId: number; url: string; photographer: string; photographerUrl: string | null } | null
   pixabay: { videoId: number; url: string; uploader: string; uploaderUrl: string | null } | null
   generation: Record<string, unknown> | null
+  latents?: { video: string; audio: string } | null
 }
+
+/** What the backend says when a final is asked of a preview made before finals could match. */
+export const OLD_PREVIEW_REFUSAL =
+  'This preview was made before finals could match their previews (it has no saved first pass), so a final made from it would be a different video. Generate a new preview for this scene and use that one.'
 
 export function libraryItem(id: string, overrides: Partial<FakeLibraryItem> = {}): FakeLibraryItem {
   return {
@@ -115,6 +120,9 @@ export interface FakeShot {
   workflow: string
   basedOn: string | null
   scene: { projectId: string; sceneId: string } | null
+  kind: 'shot' | 'preview' | 'final'
+  previewItemId?: string
+  refineSeed?: number | null
   status: 'queued' | 'running' | 'saving' | 'done' | 'error' | 'cancelled'
   queuePosition: number | null
   progress: number
@@ -157,6 +165,8 @@ interface FakeOptions {
   pixabay?: Result[] | null
   /** Whether the fake ComfyUI answers (default: yes). */
   comfy?: boolean
+  /** Off: scene previews are saved without their first pass, as before finals could match them. */
+  previewLatents?: boolean
 }
 
 /** One second of silent 16-bit mono WAV, enough for the waveform to decode. */
@@ -213,6 +223,7 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
   const comfy = { reachable: options.comfy ?? true }
   const shots: FakeShot[] = []
   const shotRequests: Record<string, unknown>[] = []
+  const finalRequests: Record<string, unknown>[] = []
   let seedCounter = 1000
   let pronunciations: unknown[] = []
   let counter = 0
@@ -273,6 +284,7 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
           error: comfy.reachable ? null : "ComfyUI isn't answering at http://127.0.0.1:8188. Open ComfyUI Desktop and wait until it has finished starting, then try again.",
           workflow: 'ltx_t2v_api.json',
           workflowProblem: null,
+          finalsProblem: null,
         })
       }
       if (parts[1] === 'shots' && parts.length === 2 && method === 'GET') return json(route, { jobs: [...shots].reverse() })
@@ -304,6 +316,7 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
             workflow: 'ltx_t2v_api.json',
             basedOn: body.basedOn ?? null,
             scene: body.scene ?? null,
+            kind: body.scene ? 'preview' : 'shot',
             status: 'queued',
             queuePosition: shots.filter((s) => s.status === 'queued' || s.status === 'running').length,
             progress: 0,
@@ -318,6 +331,43 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
           made.push(shot)
         }
         return json(route, { jobs: made })
+      }
+      if (parts[1] === 'finals' && method === 'POST') {
+        const body = request.postDataJSON() as { previewItemId: string; scene: { projectId: string; sceneId: string }; seed?: number }
+        const preview = library.find((i) => i.id === body.previewItemId)
+        if (!preview) return json(route, { detail: `Library item '${body.previewItemId}' was not found. Was it deleted?` }, 404)
+        if (!preview.latents) return json(route, { detail: OLD_PREVIEW_REFUSAL }, 409)
+        finalRequests.push(body)
+        const generation = preview.generation as { prompt: string; seed: number; duration: number }
+        const shot: FakeShot = {
+          id: `g-${++counter}`,
+          batch: `b-${++counter}`,
+          variation: 1,
+          variations: 1,
+          prompt: generation.prompt,
+          seed: generation.seed,
+          quality: 'final',
+          megapixels: 0.8,
+          duration: generation.duration,
+          fps: 24,
+          workflow: 'ltx_t2v_api.json',
+          basedOn: preview.id,
+          scene: body.scene,
+          kind: 'final',
+          previewItemId: preview.id,
+          refineSeed: body.seed ?? 42,
+          status: 'queued',
+          queuePosition: shots.filter((s) => s.status === 'queued' || s.status === 'running').length,
+          progress: 0,
+          message: "Waiting in ComfyUI's queue…",
+          itemId: null,
+          error: null,
+          createdAt: new Date(Date.now() + counter).toISOString(),
+          startedAt: null,
+          finishedAt: null,
+        }
+        shots.push(shot)
+        return json(route, { job: shot })
       }
       if (parts[1] === 'shots' && parts[2] === 'clear') {
         // Scene previews aren't in the Shots list, so clearing it leaves them.
@@ -438,8 +488,14 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
       Object.assign(shot, { status: 'error', error: 'ComfyUI failed in SamplerCustomAdvanced (405:344): CUDA out of memory', message: '', queuePosition: null })
     } else {
       const item = aiShotItem(`m-${shot.id}`, shot.prompt, shot.quality, shot.seed)
-      // A scene preview is saved with its project and scene, as the real backend does.
-      if (shot.scene) item.generation = { ...item.generation, type: 'preview', ...shot.scene, shotId: shot.id }
+      // A scene preview or final is saved with its project and scene, as the real backend does.
+      if (shot.kind === 'final') {
+        item.name = `Final: ${item.name}`
+        item.generation = { ...item.generation, type: 'final', ...shot.scene, shotId: shot.id, previewItemId: shot.previewItemId, refineSeed: shot.refineSeed }
+      } else if (shot.scene) {
+        item.generation = { ...item.generation, type: 'preview', ...shot.scene, shotId: shot.id }
+        item.latents = options.previewLatents === false ? null : { video: `${item.id}-video.latent`, audio: `${item.id}-audio.latent` }
+      }
       library.unshift(item)
       Object.assign(shot, { status: 'done', progress: 1, itemId: item.id, message: '', queuePosition: null })
     }
@@ -450,5 +506,5 @@ export async function fakeBackend(page: Page, options: FakeOptions = {}) {
     }
   }
 
-  return { library, projects, searched, limits, comfy, shots, shotRequests, runShot }
+  return { library, projects, searched, limits, comfy, shots, shotRequests, finalRequests, runShot }
 }

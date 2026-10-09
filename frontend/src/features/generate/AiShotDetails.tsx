@@ -16,6 +16,9 @@ export function AiShotDetails({ item }: { item: LibraryItem }) {
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState<'again' | 'final' | null>(null)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  // A scene's preview gets its final in the Scenes tab, made from the preview itself.
+  const scenePreview = generation.type === 'preview'
+  const offerFinal = generation.quality === 'draft' && !generation.type
 
   async function copy() {
     try {
@@ -70,7 +73,7 @@ export function AiShotDetails({ item }: { item: LibraryItem }) {
         >
           <RefreshCw size={11} aria-hidden /> Generate again
         </button>
-        {generation.quality === 'draft' && (
+        {offerFinal && (
           <button
             type="button"
             className={styles.action}
@@ -82,10 +85,17 @@ export function AiShotDetails({ item }: { item: LibraryItem }) {
           </button>
         )}
       </div>
-      {generation.quality === 'draft' && (
+      {offerFinal && (
         <p className={styles.note}>
           Final quality uses the same prompt and seed, but the result won't match this draft exactly: a different
           resolution changes the video even with the same seed.
+        </p>
+      )}
+      {scenePreview && (
+        <p className={styles.note}>
+          {item.latents
+            ? 'A scene preview: Generate final in the Scenes tab makes its final from this preview itself, so it matches.'
+            : 'A scene preview made before finals could match previews: a final made from it would be a different video.'}
         </p>
       )}
       {result && <p className={result.ok ? styles.ok : styles.error}>{result.text}</p>}

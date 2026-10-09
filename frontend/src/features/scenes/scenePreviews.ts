@@ -3,10 +3,11 @@
 // and scene. The project keeps its own record of each one (seed, prompt, last job state) and
 // follows the jobs list to update it, so a preview's state is saved with the project and outlives
 // the job. These changes are not on the undo history: a preview only goes when you delete it.
+// Finals (sceneFinals.ts) are followed the same way, here.
 import { api, type LibraryItem, type ShotJob } from '../../lib/api'
 import { newId } from '../../lib/ids'
 import { updateProject, useProjectStore } from '../../state/project/store'
-import type { PreviewStatus, ScenePreview } from '../../state/project/types'
+import type { PreviewStatus, SceneFinal, ScenePreview } from '../../state/project/types'
 import { cancelShot, generateShots, useGenerate } from '../generate/generateStore'
 import { deleteItem, useLibrary } from '../library/libraryStore'
 import { previewSeconds } from './sceneOps'
@@ -26,6 +27,7 @@ export const isPreviewActive = (preview: Pick<ScenePreview, 'status'>) => ACTIVE
 /** A job missing from the jobs list this long is gone (not just a list fetched before it was made). */
 export const GONE_AFTER_MS = 20_000
 export const GONE_MESSAGE = 'The app no longer has this preview’s job (its list was cleared or lost), and no clip was saved. Retry makes it again.'
+export const FINAL_GONE_MESSAGE = 'The app no longer has this final’s job (its list was cleared or lost), and no clip was saved. Retry makes it again.'
 
 const currentProject = () => useProjectStore.getState().project
 
@@ -47,12 +49,13 @@ function fromJob(job: ShotJob, sceneId: string): ScenePreview {
 /**
  * "Generate previews": the scene's previews count of Draft shots, each with its own random seed,
  * as long as the scene (rounded up to whole seconds, 2 to 5). They're added to the scene's
- * previews; none are replaced. Throws with the reason (no prompt, ComfyUI isn't open, …).
+ * previews; none are replaced. Returns their ids. Throws with the reason (no prompt, ComfyUI
+ * isn't open, …).
  */
-export async function generatePreviews(sceneId: string): Promise<void> {
+export async function generatePreviews(sceneId: string): Promise<string[]> {
   const project = currentProject()
   const scene = project.scenes.find((s) => s.id === sceneId)
-  if (!scene) return
+  if (!scene) return []
   const prompt = scene.prompt.trim()
   if (!prompt) throw new Error('Write the ComfyUI prompt first: it says what the preview shows.')
   const jobs = await generateShots({
@@ -63,14 +66,16 @@ export async function generatePreviews(sceneId: string): Promise<void> {
     scene: { projectId: project.id, sceneId },
   })
   // Another project was opened meanwhile: the clips still go to the library (tagged with this one).
-  if (currentProject().id !== project.id) return
+  if (currentProject().id !== project.id) return []
+  const made = jobs.map((job) => fromJob(job, sceneId))
   updateProject((p) => {
-    p.scenePreviews.push(...jobs.map((job) => fromJob(job, sceneId)))
+    p.scenePreviews.push(...made)
   })
+  return made.map((preview) => preview.id)
 }
 
 /** Forgets a finished job in the backend's list (quietly: it's only tidying up). */
-function dismissJob(jobId: string) {
+export function dismissJob(jobId: string) {
   api
     .dismissShot(jobId)
     .then(() => useGenerate.setState((s) => ({ jobs: s.jobs.filter((j) => j.id !== jobId) })))
@@ -98,7 +103,7 @@ export async function retryPreview(previewId: string): Promise<void> {
     const target = p.scenePreviews.find((x) => x.id === previewId)
     if (target) Object.assign(target, { jobId: job.id, status: job.status, error: job.error, itemId: null })
   })
-  missingSince.delete(preview.jobId)
+  forgetMissing(preview.jobId)
   dismissJob(preview.jobId)
 }
 
@@ -129,57 +134,83 @@ export async function deletePreview(previewId: string): Promise<void> {
 /** When each job was first missing from the jobs list (see GONE_AFTER_MS). */
 const missingSince = new Map<string, number>()
 
+/** A retried record has a new job: the old one's absence means nothing. */
+export const forgetMissing = (jobId: string) => missingSince.delete(jobId)
+
+/** A preview or final: the project's record of a job and what it made. */
+type JobRecord = Pick<ScenePreview, 'jobId' | 'status' | 'error' | 'itemId'>
+
 /**
- * The previews with their latest state from the jobs list, or null when nothing changed. A job
+ * The records with their latest state from the jobs list, or null when nothing changed. A job
  * that's no longer listed (the list was cleared, or pruned while the project was closed) leaves
- * its preview as it was if it had finished; one still running is looked up in the library by the
- * job id its clip was saved with, and otherwise marked failed once it's been missing a while.
- * `library` is null while the library isn't loaded.
+ * its record as it was if it had finished; one still running is looked up in the library by the
+ * job id its clip was saved with, and otherwise marked failed (`gone`) once it's been missing a
+ * while. `library` is null while the library isn't loaded.
  */
-export function syncPreviews(
-  previews: readonly ScenePreview[],
+export function syncRecords<T extends JobRecord>(
+  records: readonly T[],
   jobs: readonly ShotJob[],
   library: readonly LibraryItem[] | null,
-  now: number = Date.now(),
-): ScenePreview[] | null {
+  now: number,
+  gone: string,
+): T[] | null {
   const byId = new Map(jobs.map((job) => [job.id, job]))
   let changed = false
-  const result = previews.map((preview) => {
-    const job = byId.get(preview.jobId)
-    let next: Pick<ScenePreview, 'status' | 'error' | 'itemId'> | null = null
+  const result = records.map((record) => {
+    const job = byId.get(record.jobId)
+    let next: Pick<JobRecord, 'status' | 'error' | 'itemId'> | null = null
     if (job) {
-      missingSince.delete(preview.jobId)
-      next = { status: job.status, error: job.error, itemId: job.itemId ?? preview.itemId }
-    } else if (isPreviewActive(preview) && library) {
-      const item = library.find((i) => i.generation?.shotId === preview.jobId)
-      const since = missingSince.get(preview.jobId) ?? now
-      missingSince.set(preview.jobId, since)
+      missingSince.delete(record.jobId)
+      next = { status: job.status, error: job.error, itemId: job.itemId ?? record.itemId }
+    } else if (isPreviewActive(record) && library) {
+      const item = library.find((i) => i.generation?.shotId === record.jobId)
+      const since = missingSince.get(record.jobId) ?? now
+      missingSince.set(record.jobId, since)
       if (item) next = { status: 'done', error: null, itemId: item.id }
-      else if (now - since >= GONE_AFTER_MS) next = { status: 'error', error: GONE_MESSAGE, itemId: null }
+      else if (now - since >= GONE_AFTER_MS) next = { status: 'error', error: gone, itemId: null }
     }
-    if (!next || (next.status === preview.status && next.error === preview.error && next.itemId === preview.itemId)) return preview
+    if (!next || (next.status === record.status && next.error === record.error && next.itemId === record.itemId)) return record
     changed = true
-    return { ...preview, ...next }
+    return { ...record, ...next }
   })
   return changed ? result : null
 }
 
+/** The previews with their latest state from the jobs list, or null when nothing changed. */
+export const syncPreviews = (
+  previews: readonly ScenePreview[],
+  jobs: readonly ShotJob[],
+  library: readonly LibraryItem[] | null,
+  now: number = Date.now(),
+) => syncRecords(previews, jobs, library, now, GONE_MESSAGE)
+
+/** The finals with their latest state from the jobs list, or null when nothing changed. */
+export const syncFinals = (
+  finals: readonly SceneFinal[],
+  jobs: readonly ShotJob[],
+  library: readonly LibraryItem[] | null,
+  now: number = Date.now(),
+) => syncRecords(finals, jobs, library, now, FINAL_GONE_MESSAGE)
+
 function syncNow() {
   const { project, loaded } = useProjectStore.getState()
   const { jobs, listed } = useGenerate.getState()
-  if (!loaded || !listed || !project.scenePreviews.length) return
+  if (!loaded || !listed || (!project.scenePreviews.length && !project.sceneFinals.length)) return
   const { items, status } = useLibrary.getState()
-  const synced = syncPreviews(project.scenePreviews, jobs, status === 'ready' ? items : null)
-  if (synced) {
+  const library = status === 'ready' ? items : null
+  const previews = syncPreviews(project.scenePreviews, jobs, library)
+  const finals = syncFinals(project.sceneFinals, jobs, library)
+  if (previews || finals) {
     updateProject((p) => {
-      p.scenePreviews = synced
+      if (previews) p.scenePreviews = previews
+      if (finals) p.sceneFinals = finals
     })
   }
 }
 
 let following = false
 
-/** Keeps the open project's previews in step with the jobs list. Runs once, from App. */
+/** Keeps the open project's previews and finals in step with the jobs list. Runs once, from App. */
 export function followPreviewJobs() {
   if (following) return
   following = true
@@ -190,7 +221,8 @@ export function followPreviewJobs() {
     if (state.items !== previous.items || state.status !== previous.status) syncNow()
   })
   useProjectStore.subscribe((state, previous) => {
-    if (state.project.scenePreviews !== previous.project.scenePreviews || state.loaded !== previous.loaded) syncNow()
+    const { project } = state
+    if (project.scenePreviews !== previous.project.scenePreviews || project.sceneFinals !== previous.project.sceneFinals || state.loaded !== previous.loaded) syncNow()
   })
   syncNow()
 }
